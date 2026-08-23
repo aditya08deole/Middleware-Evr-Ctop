@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    function isOperator() {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'operator'];
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function hasPermission(permission) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions.includes(permission);
+    }
+    
+    // Devices collection
+    match /devices/{deviceId} {
+      allow read: if isAuthenticated();
+      allow create: if isOperator() || hasPermission('devices:create');
+      allow update: if isOperator() || isOwner(resource.data.created_by) || hasPermission('devices:update');
+      allow delete: if isAdmin() || hasPermission('devices:delete');
+    }
+    
+    // Logs collection
+    match /logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // System writes logs
+      allow update, delete: if isAdmin();
+    }
+    
+    // Processed data collection
+    match /processed_data/{dataId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // System writes data
+      allow update, delete: if isAdmin();
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAdmin() || isOwner(userId);
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isOwner(userId);
+      allow delete: if isAdmin();
+    }
+    
+    // Settings collection
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Device subcollections
+    match /devices/{deviceId}/activity/{activityId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // System writes activity
+      allow update, delete: if isAdmin();
+    }
+    
+    match /devices/{deviceId}/alerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow create: if true; // System writes alerts
+      allow update, delete: if isAdmin();
+    }
+  }
+}

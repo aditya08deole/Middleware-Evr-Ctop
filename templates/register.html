@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+
+{% block nav %}{% endblock %}
+
+{% block content %}
+<style>
+    .register-container {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 50%, #6ee7b7 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .register-card {
+        background: white;
+        border: 3px solid #059669;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(5, 150, 105, 0.3);
+        width: 100%;
+        max-width: 450px;
+        padding: 40px;
+    }
+    .register-icon {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+        color: white;
+        font-size: 2.5rem;
+    }
+    .register-title {
+        color: #1c1917;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .register-subtitle {
+        color: #78716c;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    .btn-register {
+        background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+        border: none;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .btn-register:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(234, 88, 12, 0.3);
+        color: white;
+    }
+    .btn-google {
+        background: linear-gradient(135deg, #ea4335 0%, #d33b28 100%);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-weight: 500;
+    }
+    .btn-github {
+        background: linear-gradient(135deg, #6b7280 0%, #374151 100%);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-weight: 500;
+    }
+    .input-group-text {
+        background: linear-gradient(135deg, #a7f3d0 0%, #6ee7b7 100%);
+        border: 2px solid #059669;
+        border-right: none;
+        color: #065f46;
+    }
+    .form-control {
+        border: 2px solid #059669;
+        border-left: none;
+        padding: 12px;
+    }
+    .form-control:focus {
+        border-color: #047857;
+        box-shadow: 0 0 0 0.25rem rgba(5, 150, 105, 0.25);
+    }
+    .login-link {
+        color: #ea580c;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .login-link:hover {
+        color: #c2410c;
+        text-decoration: underline;
+    }
+</style>
+
+<div class="register-container">
+    <div class="register-card">
+        <div class="register-icon">
+            <i class="bi bi-person-plus"></i>
+        </div>
+        <h2 class="register-title">Create Account!</h2>
+        <p class="register-subtitle">Sign up to get started with IoT Pipeline</p>
+        
+        <form id="register-form">
+            <div class="mb-3">
+                <label for="display_name" class="form-label fw-semibold" style="color: #44403c;">Full Name</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-person-fill"></i>
+                    </span>
+                    <input type="text" class="form-control" id="display_name" name="display_name" required placeholder="John Doe">
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label for="email" class="form-label fw-semibold" style="color: #44403c;">Email Address</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-envelope-fill"></i>
+                    </span>
+                    <input type="email" class="form-control" id="email" name="email" required placeholder="you@example.com">
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label for="password" class="form-label fw-semibold" style="color: #44403c;">Password</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-lock-fill"></i>
+                    </span>
+                    <input type="password" class="form-control" id="password" name="password" required placeholder="••••••••" minlength="6">
+                </div>
+                <div class="form-text" style="color: #78716c;">Password must be at least 6 characters</div>
+            </div>
+            
+            <div class="mb-3">
+                <label for="confirm_password" class="form-label fw-semibold" style="color: #44403c;">Confirm Password</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-lock-fill"></i>
+                    </span>
+                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" required placeholder="••••••••" minlength="6">
+                </div>
+            </div>
+            
+            <div class="mb-3 form-check">
+                <input type="checkbox" class="form-check-input" id="terms" required style="border-color: #059669;">
+                <label class="form-check-label" for="terms" style="color: #78716c;">
+                    I agree to the <a href="#" style="color: #ea580c;">Terms</a> and <a href="#" style="color: #ea580c;">Privacy</a>
+                </label>
+            </div>
+            
+            <div id="loading" style="display: none; text-align: center; padding: 20px;">
+                <div class="spinner-border" style="color: #059669;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-register w-100 mb-3">
+                <i class="bi bi-person-plus"></i> Create Account
+            </button>
+        </form>
+        
+        <hr style="border-top: 2px dashed #a7f3d0; margin: 25px 0;">
+        
+        <div class="text-center mb-3">
+            <p class="mb-2" style="color: #78716c;">Or sign up with</p>
+            <div class="d-flex gap-2 justify-content-center">
+                <button class="btn btn-google" onclick="signInWithGoogle()">
+                    <i class="bi bi-google"></i> Google
+                </button>
+                <button class="btn btn-github" onclick="signInWithGitHub()">
+                    <i class="bi bi-github"></i> GitHub
+                </button>
+            </div>
+        </div>
+        
+        <div class="text-center" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); padding: 15px; border-radius: 12px;">
+            <p class="mb-0" style="color: #065f46;">Already have an account? <a href="/login" class="login-link">Sign In →</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('register-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const displayName = document.getElementById('display_name').value;
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const confirmPassword = document.getElementById('confirm_password').value;
+    
+    // Validate passwords match
+    if (password !== confirmPassword) {
+        showAlert('Passwords do not match', 'danger');
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        // Create user with Firebase Auth
+        const userCredential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+        
+        // Update display name
+        await userCredential.user.updateProfile({ displayName: displayName });
+        
+        // Register with backend
+        const response = await fetch('/auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: email,
+                password: password,
+                display_name: displayName
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert('Account created successfully!', 'success');
+            setTimeout(() => {
+                window.location.href = '/login';
+            }, 1500);
+        } else {
+            showAlert('Registration failed: ' + result.error, 'danger');
+            // Clean up Firebase user if backend registration failed
+            await userCredential.user.delete();
+        }
+        
+    } catch (error) {
+        console.error('Registration error:', error);
+        showAlert('Registration failed: ' + error.message, 'danger');
+    }
+    
+    hideLoading();
+});
+
+async function signInWithGoogle() {
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const result = await firebase.auth().signInWithPopup(provider);
+        
+        // Register with backend
+        const response = await fetch('/auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: result.user.email,
+                password: '', // No password for OAuth
+                display_name: result.user.displayName
+            })
+        });
+        
+        const registerResult = await response.json();
+        
+        if (registerResult.success || registerResult.error.includes('already')) {
+            showAlert('Account created successfully!', 'success');
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1000);
+        }
+    } catch (error) {
+        console.error('Google sign-up error:', error);
+        showAlert('Google sign-up failed: ' + error.message, 'danger');
+    }
+}
+
+async function signInWithGitHub() {
+    try {
+        const provider = new firebase.auth.GithubAuthProvider();
+        const result = await firebase.auth().signInWithPopup(provider);
+        
+        // Register with backend
+        const response = await fetch('/auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: result.user.email,
+                password: '',
+                display_name: result.user.displayName
+            })
+        });
+        
+        const registerResult = await response.json();
+        
+        if (registerResult.success || registerResult.error.includes('already')) {
+            showAlert('Account created successfully!', 'success');
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1000);
+        }
+    } catch (error) {
+        console.error('GitHub sign-up error:', error);
+        showAlert('GitHub sign-up failed: ' + error.message, 'danger');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+
+{% block nav %}{% endblock %}
+
+{% block content %}
+<style>
+    .login-container {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fcd34d 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+    .login-card {
+        background: white;
+        border: 3px solid #f59e0b;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(245, 158, 11, 0.3);
+        width: 100%;
+        max-width: 450px;
+        padding: 40px;
+    }
+    .login-icon {
+        width: 80px;
+        height: 80px;
+        background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+        color: white;
+        font-size: 2.5rem;
+    }
+    .login-title {
+        color: #1c1917;
+        font-weight: 700;
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    .login-subtitle {
+        color: #78716c;
+        text-align: center;
+        margin-bottom: 30px;
+    }
+    .btn-login {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        border: none;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .btn-login:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 20px rgba(5, 150, 105, 0.3);
+        color: white;
+    }
+    .btn-google {
+        background: linear-gradient(135deg, #ea4335 0%, #d33b28 100%);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-weight: 500;
+    }
+    .btn-github {
+        background: linear-gradient(135deg, #6b7280 0%, #374151 100%);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 10px;
+        font-weight: 500;
+    }
+    .input-group-text {
+        background: linear-gradient(135deg, #fde68a 0%, #fcd34d 100%);
+        border: 2px solid #f59e0b;
+        border-right: none;
+        color: #92400e;
+    }
+    .form-control {
+        border: 2px solid #f59e0b;
+        border-left: none;
+        padding: 12px;
+    }
+    .form-control:focus {
+        border-color: #f97316;
+        box-shadow: 0 0 0 0.25rem rgba(249, 115, 22, 0.25);
+    }
+    .register-link {
+        color: #059669;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    .register-link:hover {
+        color: #047857;
+        text-decoration: underline;
+    }
+    .forgot-link {
+        color: #8b5cf6;
+        text-decoration: none;
+    }
+    .forgot-link:hover {
+        color: #7c3aed;
+    }
+</style>
+
+<div class="login-container">
+    <div class="login-card">
+        <div class="login-icon">
+            <i class="bi bi-cpu"></i>
+        </div>
+        <h2 class="login-title">Welcome Back!</h2>
+        <p class="login-subtitle">Sign in to your IoT Pipeline account</p>
+        
+        <form id="login-form">
+            <div class="mb-3">
+                <label for="email" class="form-label fw-semibold" style="color: #44403c;">Email Address</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-envelope-fill"></i>
+                    </span>
+                    <input type="email" class="form-control" id="email" name="email" required placeholder="you@example.com">
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <label for="password" class="form-label fw-semibold" style="color: #44403c;">Password</label>
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-lock-fill"></i>
+                    </span>
+                    <input type="password" class="form-control" id="password" name="password" required placeholder="••••••••">
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="remember" style="border-color: #f59e0b;">
+                    <label class="form-check-label" for="remember" style="color: #78716c;">Remember me</label>
+                </div>
+                <a href="/forgot-password" class="forgot-link">Forgot password?</a>
+            </div>
+            
+            <div id="loading" style="display: none; text-align: center; padding: 20px;">
+                <div class="spinner-border" style="color: #f59e0b;" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-login w-100 mb-3">
+                <i class="bi bi-box-arrow-in-right"></i> Sign In
+            </button>
+        </form>
+        
+        <hr style="border-top: 2px dashed #fde68a; margin: 25px 0;">
+        
+        <div class="text-center mb-3">
+            <p class="mb-2" style="color: #78716c;">Or sign in with</p>
+            <div class="d-flex gap-2 justify-content-center">
+                <button class="btn btn-google" onclick="signInWithGoogle()">
+                    <i class="bi bi-google"></i> Google
+                </button>
+                <button class="btn btn-github" onclick="signInWithGitHub()">
+                    <i class="bi bi-github"></i> GitHub
+                </button>
+            </div>
+        </div>
+        
+        <div class="text-center" style="background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); padding: 15px; border-radius: 12px;">
+            <p class="mb-0" style="color: #92400e;">Don't have an account? <a href="/register" class="register-link">Create Account →</a></p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('login-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    showLoading();
+    
+    try {
+        // Sign in with Firebase Auth
+        const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
+        
+        // Get ID token
+        const idToken = await userCredential.user.getIdToken();
+        
+        // Verify token with backend
+        const response = await fetch('/auth/verify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id_token: idToken })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert('Login successful!', 'success');
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1000);
+        } else {
+            showAlert('Login failed: ' + result.error, 'danger');
+        }
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        showAlert('Login failed: ' + error.message, 'danger');
+    }
+    
+    hideLoading();
+});
+
+async function signInWithGoogle() {
+    try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        const result = await firebase.auth().signInWithPopup(provider);
+        
+        const idToken = await result.user.getIdToken();
+        
+        const response = await fetch('/auth/verify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id_token: idToken })
+        });
+        
+        const verifyResult = await response.json();
+        
+        if (verifyResult.success) {
+            showAlert('Login successful!', 'success');
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1000);
+        }
+    } catch (error) {
+        console.error('Google sign-in error:', error);
+        showAlert('Google sign-in failed: ' + error.message, 'danger');
+    }
+}
+
+async function signInWithGitHub() {
+    try {
+        const provider = new firebase.auth.GithubAuthProvider();
+        const result = await firebase.auth().signInWithPopup(provider);
+        
+        const idToken = await result.user.getIdToken();
+        
+        const response = await fetch('/auth/verify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id_token: idToken })
+        });
+        
+        const verifyResult = await response.json();
+        
+        if (verifyResult.success) {
+            showAlert('Login successful!', 'success');
+            setTimeout(() => {
+                window.location.href = '/dashboard';
+            }, 1000);
+        }
+    } catch (error) {
+        console.error('GitHub sign-in error:', error);
+        showAlert('GitHub sign-in failed: ' + error.message, 'danger');
+    }
+}
+</script>
+{% endblock %}

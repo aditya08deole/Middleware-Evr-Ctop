@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Data Pipeline</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/validation.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/loading.js') }}"></script>
+</head>
+<body class="liquid-glass-app">
+    <!-- Ambient Fluid Glass Refraction Orbs (Non-intrusive) -->
+    <div class="liquid-ambient-canvas" aria-hidden="true">
+        <div class="liquid-orb liquid-orb-1"></div>
+        <div class="liquid-orb liquid-orb-2"></div>
+        <div class="liquid-orb liquid-orb-3"></div>
+    </div>
+
+{% block nav %}
+    <!-- Ultra-Liquid Glass Command Navigation Bar -->
+    <header class="floating-nav-header">
+        <div class="nav-glass-container">
+            <!-- Brand & Identity -->
+            <a href="/dashboard" class="nav-brand">
+                <div class="brand-icon-wrapper">
+                    <i class="bi bi-cpu-fill"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-title">Evaratech</span>
+                    <span class="brand-subtitle-ctop">CtoP Middleware</span>
+                </div>
+            </a>
+
+            <!-- Navigation Links -->
+            <nav class="nav-center">
+                <ul class="nav-menu" id="nav-links">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}" href="/dashboard">
+                            <i class="bi bi-grid-fill"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/logs' %}active{% endif %}" href="/logs">
+                            <i class="bi bi-journal-text"></i>
+                            <span>Logs</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.path == '/add-device' %}active{% endif %}" href="/add-device">
+                            <i class="bi bi-plus-circle-fill"></i>
+                            <span>Add Device</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <!-- Header Quick Actions & Controls (Strictly Icon-Only) -->
+            <div class="nav-actions">
+                <button class="nav-icon-action-btn btn-mirror-refresh" onclick="refreshMirror(this)" title="Refresh Mirror">
+                    <i class="bi bi-cloud-download spin-icon"></i>
+                </button>
+                <button class="nav-icon-action-btn btn-sync-all" onclick="fetchAllDevices(this)" title="Sync All Devices">
+                    <i class="bi bi-arrow-repeat spin-icon"></i>
+                </button>
+                
+                <!-- Mobile Navigation Toggle -->
+                <button class="nav-action-btn mobile-menu-toggle d-md-none ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#mobileNavDrawer" aria-controls="mobileNavDrawer" aria-expanded="false" aria-label="Toggle navigation">
+                    <i class="bi bi-list fs-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mobile Drawer -->
+        <div class="collapse d-md-none mobile-nav-drawer" id="mobileNavDrawer">
+            <div class="mobile-drawer-inner">
+                <a class="mobile-nav-link {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}" href="/dashboard">
+                    <i class="bi bi-grid-fill"></i> Dashboard
+                </a>
+                <a class="mobile-nav-link {% if request.path == '/logs' %}active{% endif %}" href="/logs">
+                    <i class="bi bi-journal-text"></i> Logs
+                </a>
+                <a class="mobile-nav-link {% if request.path == '/add-device' %}active{% endif %}" href="/add-device">
+                    <i class="bi bi-plus-circle-fill"></i> Add Device
+                </a>
+            </div>
+        </div>
+    </header>
+    <div style="height: 105px;"></div>
+{% endblock %}
+
+    <div class="container mt-4">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showLoading() {
+            const el = document.getElementById('loading');
+            if (el) el.style.display = 'block';
+        }
+        
+        function hideLoading() {
+            const el = document.getElementById('loading');
+            if (el) el.style.display = 'none';
+        }
+        
+        function showAlert(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            const container = document.querySelector('.container');
+            if (container) container.insertBefore(alertDiv, container.firstChild);
+            
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        function refreshMirror(btn) {
+            let icon = null;
+            if (btn && btn.querySelector) icon = btn.querySelector('.spin-icon');
+            if (icon) icon.classList.add('spinning');
+            showLoading();
+
+            fetch('/devices/refresh-mirror', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    if (data.success) {
+                        showAlert('Local mirror updated from Firebase!', 'success');
+                    } else {
+                        showAlert(`Error: ${data.error}`, 'danger');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    console.error('Error refreshing mirror:', error);
+                    showAlert('Error refreshing mirror', 'danger');
+                })
+                .finally(() => {
+                    setTimeout(() => {
+                        if (icon) icon.classList.remove('spinning');
+                    }, 800);
+                });
+        }
+
+        function fetchAllDevices(btn) {
+            let icon = null;
+            if (btn && btn.querySelector) icon = btn.querySelector('.spin-icon');
+            if (icon) icon.classList.add('spinning');
+            showLoading();
+
+            fetch('/data/fetch-all', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    if (data.success) {
+                        showAlert(`Synced ${data.data.successful}/${data.data.total_devices} devices successfully.`, 'success');
+                    } else {
+                        showAlert(`Error: ${data.error}`, 'danger');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    console.error('Error fetching all devices:', error);
+                    showAlert('Error syncing devices', 'danger');
+                })
+                .finally(() => {
+                    setTimeout(() => {
+                        if (icon) icon.classList.remove('spinning');
+                    }, 800);
+                });
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

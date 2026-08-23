@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2 style="font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em;">
+                    <i class="bi bi-journal-text" style="color: var(--primary-color);"></i> System Logs
+                </h2>
+                <p class="text-muted mb-0">Real-time audit trail for all IoT device activities</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary" onclick="clearLocalLogs()">
+                    <i class="bi bi-trash"></i> Clear View
+                </button>
+                <div class="dropdown">
+                    <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-filter"></i> Filter Status
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="setFilter('all')">All Logs</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="setFilter('success')">Success Only</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="setFilter('error')">Errors Only</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card shadow-sm border-0" style="border-radius: 16px; overflow: hidden;">
+            <div class="card-header bg-white border-bottom-0 py-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold"><i class="bi bi-activity" id="logs-icon"></i> Live Feed</h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-soft-primary text-primary" id="log-count-badge">0 Logs</span>
+                    <div class="spinner-grow spinner-grow-sm text-primary" role="status" id="live-indicator"></div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="logs-container" class="p-4" style="max-height: 70vh; overflow-y: auto; background: #f8f9fa;">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2 text-muted">Connecting to live feed...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/logs-viewer.js') }}"></script>
+{% endblock %}
+

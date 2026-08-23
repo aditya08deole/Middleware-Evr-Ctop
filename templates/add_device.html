@@ -1,0 +1,678 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0" style="font-weight: 700; letter-spacing: -0.01em;">
+                    <i class="bi bi-plus-circle" style="color: var(--secondary-color);"></i> Add New Device
+                </h4>
+            </div>
+            <div class="card-body">
+                <form id="device-form">
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Device ID *</label>
+                        <input type="text" class="form-control" id="name" name="name" required>
+                        <div class="form-text">Unique identifier for this device (e.g., EVARA001, TANK_A1)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="device_type" class="form-label">Device Type *</label>
+                        <select class="form-select" id="device_type" name="device_type" required>
+                            <option value="" disabled selected>Select device type...</option>
+                            <option value="EvaraTank">EvaraTank</option>
+                            <option value="EvaraFlow">EvaraFlow</option>
+                            <option value="EvaraDeep">EvaraDeep</option>
+                            <option value="EvaraTDS">EvaraTDS</option>
+                            <option value="EvaraValve">EvaraValve</option>
+                        </select>
+                        <div class="form-text">Select the type of your IoT device</div>
+                    </div>
+
+                    <!-- Platform Selector -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Data Source Platform *</label>
+                        <div class="btn-group w-100" role="group" aria-label="Data source platform">
+                            <input type="radio" class="btn-check" name="data_source" id="platform-thingspeak" value="thingspeak" checked autocomplete="off" onchange="toggleAddDevicePlatform()">
+                            <label class="btn btn-outline-primary" for="platform-thingspeak">
+                                <i class="bi bi-cloud-arrow-down"></i> ThingSpeak
+                            </label>
+                            <input type="radio" class="btn-check" name="data_source" id="platform-emqx" value="emqx" autocomplete="off" onchange="toggleAddDevicePlatform()">
+                            <label class="btn btn-outline-success" for="platform-emqx">
+                                <i class="bi bi-broadcast"></i> EMQX (MQTT)
+                            </label>
+                        </div>
+                        <div class="form-text">Choose how this device sends telemetry</div>
+                    </div>
+                    
+                    <!-- ThingSpeak Fields -->
+                    <div id="thingspeak-fields-group">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="channel_id" class="form-label">ThingSpeak Channel ID *</label>
+                                <input type="text" class="form-control" id="channel_id" name="channel_id" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="api_key" class="form-label">ThingSpeak Read API Key *</label>
+                                <input type="password" class="form-control" id="api_key" name="api_key" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- EMQX Fields -->
+                    <div id="emqx-fields-group" style="display: none;">
+                        <div class="alert alert-info py-2">
+                            <small><i class="bi bi-info-circle"></i> EMQX uses MQTT for high-speed, persistent push streaming.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label for="emqx_broker_url" class="form-label">EMQX Broker Host / URL *</label>
+                            <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" placeholder="broker.emqx.io">
+                            <div class="form-text">Server hostname or IP of your EMQX broker</div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_port" class="form-label">Port</label>
+                                <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="1883" min="1" max="65535">
+                                <div class="form-text">1883 (TCP) or 8883 (SSL/TLS)</div>
+                            </div>
+                            <div class="col-md-6 mb-3 d-flex align-items-end">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls">
+                                    <label class="form-check-label" for="emqx_use_tls">
+                                        <i class="bi bi-shield-lock"></i> Use SSL/TLS
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" placeholder="Optional">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_password" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" placeholder="Optional">
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="emqx_topic" class="form-label">MQTT Topic *</label>
+                            <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
+                            <div class="form-text">The topic your device publishes data to</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="ctop_url_1" class="form-label">CTOP Endpoint URL *</label>
+                        <input type="url" class="form-control" id="ctop_url_1" name="ctop_url_1" required placeholder="https://ctop.iiit.ac.in/api/nodes/create-cin/391">
+                        <div class="form-text">CTOP node endpoint URL (include the node ID at the end)</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="auth_token" class="form-label">CTOP API Authorization Header *</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="auth_token" name="auth_token" required placeholder="Bearer b1a8f4503e741e05f88699bb7c91c02a" style="font-family: monospace;">
+                            <button class="btn btn-outline-secondary" type="button" id="toggleAuthToken" onclick="toggleAuthVisibility()">
+                                <i class="bi bi-eye" id="authTokenIcon"></i>
+                            </button>
+                        </div>
+                        <div class="form-text">Full Authorization header value (e.g., Bearer b1a8f4503e741e05f88699bb7c91c02a)</div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="latitude" class="form-label">Latitude</label>
+                            <input type="number" step="any" class="form-control" id="latitude" name="latitude" placeholder="e.g., 17.3850">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="longitude" class="form-label">Longitude</label>
+                            <input type="number" step="any" class="form-control" id="longitude" name="longitude" placeholder="e.g., 78.4867">
+                        </div>
+                    </div>
+                    
+                    <!-- EvaraTank Specific Fields -->
+                    <div id="evaratank-fields" class="device-specific-fields" style="display: none;">
+                        <hr class="my-4">
+                        <h5 class="mb-3" style="color: var(--primary-color); font-weight: 600;">
+                            <i class="bi bi-gear"></i> EvaraTank Configuration
+                        </h5>
+                        
+                        <div class="mb-3">
+                            <label for="tank_height" class="form-label">Tank Height (cm) *</label>
+                            <input type="number" step="any" class="form-control" id="tank_height" name="tank_height" placeholder="e.g., 200">
+                            <div class="form-text">Total height of the tank in centimeters</div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="distance_field" class="form-label">Distance Field *</label>
+                                <select class="form-select field-select" id="distance_field" name="distance_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing distance data</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="temperature_field" class="form-label">Temperature Field *</label>
+                                <select class="form-select field-select" id="temperature_field" name="temperature_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing temperature data</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="filtering_method" class="form-label">Filtering Method</label>
+                                <select class="form-select filtering-method" id="filtering_method" name="filtering_method">
+                                    <option value="none">No Filtering</option>
+                                    <option value="median">Median</option>
+                                    <option value="average">Average</option>
+                                </select>
+                                <div class="form-text">Method to filter sensor readings</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="filter_window" class="form-label">Filter Window Size</label>
+                                <input type="number" class="form-control filter-window" id="filter_window" name="filter_window" value="5" min="1" max="20">
+                                <div class="form-text">Number of values to use for filtering</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- EvaraFlow Specific Fields -->
+                    <div id="evaraflow-fields" class="device-specific-fields" style="display: none;">
+                        <hr class="my-4">
+                        <h5 class="mb-3" style="color: var(--primary-color); font-weight: 600;">
+                            <i class="bi bi-gear"></i> EvaraFlow Configuration
+                        </h5>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="meter_reading_field" class="form-label">Meter Reading Field *</label>
+                                <select class="form-select field-select" id="meter_reading_field" name="meter_reading_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing meter reading</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="flow_rate_field_ef" class="form-label">Flow Rate Field *</label>
+                                <select class="form-select field-select" id="flow_rate_field_ef" name="flow_rate_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing flow rate</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="filtering_method_ef" class="form-label">Filtering Method</label>
+                                <select class="form-select filtering-method" id="filtering_method_ef" name="filtering_method">
+                                    <option value="none">No Filtering</option>
+                                    <option value="median">Median</option>
+                                    <option value="average">Average</option>
+                                </select>
+                                <div class="form-text">Method to filter sensor readings</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="filter_window_ef" class="form-label">Filter Window Size</label>
+                                <input type="number" class="form-control filter-window" id="filter_window_ef" name="filter_window" value="5" min="1" max="20">
+                                <div class="form-text">Number of values to use for filtering</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- EvaraValve Specific Fields -->
+                    <div id="evaravalve-fields" class="device-specific-fields" style="display: none;">
+                        <hr class="my-4">
+                        <h5 class="mb-3" style="color: var(--primary-color); font-weight: 600;">
+                            <i class="bi bi-gear"></i> EvaraValve Configuration
+                        </h5>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="flow_rate_field_ev" class="form-label">Flow Rate Field *</label>
+                                <select class="form-select field-select" id="flow_rate_field_ev" name="flow_rate_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing flow rate</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="liters_field" class="form-label">Liters Field *</label>
+                                <select class="form-select field-select" id="liters_field" name="liters_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing liters dispensed</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="filtering_method_ev" class="form-label">Filtering Method</label>
+                                <select class="form-select filtering-method" id="filtering_method_ev" name="filtering_method">
+                                    <option value="none">No Filtering</option>
+                                    <option value="median">Median</option>
+                                    <option value="average">Average</option>
+                                </select>
+                                <div class="form-text">Method to filter sensor readings</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="filter_window_ev" class="form-label">Filter Window Size</label>
+                                <input type="number" class="form-control filter-window" id="filter_window_ev" name="filter_window" value="5" min="1" max="20">
+                                <div class="form-text">Number of values to use for filtering</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- EvaraDeep Specific Fields -->
+                    <div id="evaradeep-fields" class="device-specific-fields" style="display: none;">
+                        <hr class="my-4">
+                        <h5 class="mb-3" style="color: var(--primary-color); font-weight: 600;">
+                            <i class="bi bi-gear"></i> EvaraDeep Configuration
+                        </h5>
+                        
+                        <div class="mb-3">
+                            <label for="distance_field_ed" class="form-label">Distance Field (cm) *</label>
+                            <select class="form-select field-select" id="distance_field_ed" name="distance_field">
+                                <option value="" disabled selected>Select field...</option>
+                                <option value="field1">Field 1</option>
+                                <option value="field2">Field 2</option>
+                                <option value="field3">Field 3</option>
+                                <option value="field4">Field 4</option>
+                                <option value="field5">Field 5</option>
+                                <option value="field6">Field 6</option>
+                                <option value="field7">Field 7</option>
+                                <option value="field8">Field 8</option>
+                            </select>
+                            <div class="form-text">ThingSpeak field containing distance in cm</div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="filtering_method_ed" class="form-label">Filtering Method</label>
+                                <select class="form-select filtering-method" id="filtering_method_ed" name="filtering_method">
+                                    <option value="none">No Filtering</option>
+                                    <option value="median">Median</option>
+                                    <option value="average">Average</option>
+                                </select>
+                                <div class="form-text">Method to filter sensor readings</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="filter_window_ed" class="form-label">Filter Window Size</label>
+                                <input type="number" class="form-control filter-window" id="filter_window_ed" name="filter_window" value="5" min="1" max="20">
+                                <div class="form-text">Number of values to use for filtering</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- EvaraTDS Specific Fields -->
+                    <div id="evaratds-fields" class="device-specific-fields" style="display: none;">
+                        <hr class="my-4">
+                        <h5 class="mb-3" style="color: var(--primary-color); font-weight: 600;">
+                            <i class="bi bi-gear"></i> EvaraTDS Configuration
+                        </h5>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="temperature_field_et" class="form-label">Temperature Field *</label>
+                                <select class="form-select field-select" id="temperature_field_et" name="temperature_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing temperature</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="tds_field" class="form-label">TDS Field (ppm) *</label>
+                                <select class="form-select field-select" id="tds_field" name="tds_field">
+                                    <option value="" disabled selected>Select field...</option>
+                                    <option value="field1">Field 1</option>
+                                    <option value="field2">Field 2</option>
+                                    <option value="field3">Field 3</option>
+                                    <option value="field4">Field 4</option>
+                                    <option value="field5">Field 5</option>
+                                    <option value="field6">Field 6</option>
+                                    <option value="field7">Field 7</option>
+                                    <option value="field8">Field 8</option>
+                                </select>
+                                <div class="form-text">ThingSpeak field containing TDS in ppm</div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="filtering_method_et" class="form-label">Filtering Method</label>
+                                <select class="form-select filtering-method" id="filtering_method_et" name="filtering_method">
+                                    <option value="none">No Filtering</option>
+                                    <option value="median">Median</option>
+                                    <option value="average">Average</option>
+                                </select>
+                                <div class="form-text">Method to filter sensor readings</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="filter_window_et" class="form-label">Filter Window Size</label>
+                                <input type="number" class="form-control filter-window" id="filter_window_et" name="filter_window" value="5" min="1" max="20">
+                                <div class="form-text">Number of values to use for filtering</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="is_active" name="is_active" checked>
+                        <label class="form-check-label" for="is_active">Activate device immediately</label>
+                    </div>
+                    
+                    <div id="loading" style="display: none; text-align: center; padding: 20px;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Add Device
+                        </button>
+                        <a href="/" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Help Card -->
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Help</h5>
+            </div>
+            <div class="card-body">
+                <h6>ThingSpeak Configuration</h6>
+                <ul>
+                    <li><strong>Channel ID:</strong> Found in your ThingSpeak channel settings</li>
+                    <li><strong>Read API Key:</strong> Also in channel settings (not the Write API Key)</li>
+                </ul>
+                
+                <h6>CTOP Configuration</h6>
+                <ul>
+                    <li><strong>CTOP Endpoint URL:</strong> The node-specific URL (e.g., https://ctop.iiit.ac.in/api/nodes/create-cin/391)</li>
+                    <li><strong>Authorization Header:</strong> Full header value including "Bearer " prefix</li>
+                </ul>
+                
+                <h6>Optional Fields</h6>
+                <ul>
+                    <li><strong>Latitude/Longitude:</strong> Device location for geotagging</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Toggle between ThingSpeak and EMQX input fields
+function toggleAddDevicePlatform() {
+    const isEmqx = document.getElementById('platform-emqx').checked;
+    const tsGroup = document.getElementById('thingspeak-fields-group');
+    const emqxGroup = document.getElementById('emqx-fields-group');
+    const channelIdInput = document.getElementById('channel_id');
+    const apiKeyInput = document.getElementById('api_key');
+    const emqxBrokerInput = document.getElementById('emqx_broker_url');
+    const emqxTopicInput = document.getElementById('emqx_topic');
+
+    if (isEmqx) {
+        tsGroup.style.display = 'none';
+        emqxGroup.style.display = 'block';
+        channelIdInput.removeAttribute('required');
+        apiKeyInput.removeAttribute('required');
+        emqxBrokerInput.setAttribute('required', 'required');
+        emqxTopicInput.setAttribute('required', 'required');
+    } else {
+        tsGroup.style.display = 'block';
+        emqxGroup.style.display = 'none';
+        channelIdInput.setAttribute('required', 'required');
+        apiKeyInput.setAttribute('required', 'required');
+        emqxBrokerInput.removeAttribute('required');
+        emqxTopicInput.removeAttribute('required');
+    }
+}
+
+// Helper function to show/hide device specific fields
+function showDeviceFields(deviceType) {
+    // Hide all device-specific fields first
+    document.querySelectorAll('.device-specific-fields').forEach(el => {
+        el.style.display = 'none';
+    });
+    
+    // Remove required from all field-select elements
+    document.querySelectorAll('.field-select').forEach(el => {
+        el.removeAttribute('required');
+    });
+    
+    // Show relevant fields and make them required
+    if (deviceType === 'EvaraTank') {
+        document.getElementById('evaratank-fields').style.display = 'block';
+        document.getElementById('tank_height').setAttribute('required', 'true');
+        document.getElementById('distance_field').setAttribute('required', 'true');
+        document.getElementById('temperature_field').setAttribute('required', 'true');
+    } else if (deviceType === 'EvaraFlow') {
+        document.getElementById('evaraflow-fields').style.display = 'block';
+        document.getElementById('meter_reading_field').setAttribute('required', 'true');
+        document.getElementById('flow_rate_field_ef').setAttribute('required', 'true');
+    } else if (deviceType === 'EvaraValve') {
+        document.getElementById('evaravalve-fields').style.display = 'block';
+        document.getElementById('flow_rate_field_ev').setAttribute('required', 'true');
+        document.getElementById('liters_field').setAttribute('required', 'true');
+    } else if (deviceType === 'EvaraDeep') {
+        document.getElementById('evaradeep-fields').style.display = 'block';
+        document.getElementById('distance_field_ed').setAttribute('required', 'true');
+    } else if (deviceType === 'EvaraTDS') {
+        document.getElementById('evaratds-fields').style.display = 'block';
+        document.getElementById('temperature_field_et').setAttribute('required', 'true');
+        document.getElementById('tds_field').setAttribute('required', 'true');
+    }
+}
+
+// Toggle device fields based on device type
+document.getElementById('device_type').addEventListener('change', function() {
+    showDeviceFields(this.value);
+});
+
+// Toggle auth token visibility
+function toggleAuthVisibility() {
+    const authInput = document.getElementById('auth_token');
+    const authIcon = document.getElementById('authTokenIcon');
+    
+    if (authInput.type === 'password') {
+        authInput.type = 'text';
+        authIcon.classList.remove('bi-eye');
+        authIcon.classList.add('bi-eye-slash');
+    } else {
+        authInput.type = 'password';
+        authIcon.classList.remove('bi-eye-slash');
+        authIcon.classList.add('bi-eye');
+    }
+}
+
+document.getElementById('device-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const deviceType = formData.get('device_type');
+    const isEmqx = document.getElementById('platform-emqx').checked;
+    
+    const data = {
+        name: formData.get('name'),
+        device_type: deviceType,
+        data_source: isEmqx ? 'emqx' : 'thingspeak',
+        channel_id: isEmqx ? 'emqx' : formData.get('channel_id'),
+        api_key: isEmqx ? 'not_used_emqx' : formData.get('api_key'),
+        ctop_url_1: formData.get('ctop_url_1'),
+        auth_token: formData.get('auth_token'),
+        latitude: formData.get('latitude') ? parseFloat(formData.get('latitude')) : null,
+        longitude: formData.get('longitude') ? parseFloat(formData.get('longitude')) : null,
+        is_active: document.getElementById('is_active').checked
+    };
+
+    if (isEmqx) {
+        data.emqx_broker_url = formData.get('emqx_broker_url');
+        data.emqx_port = parseInt(formData.get('emqx_port')) || 1883;
+        data.emqx_username = formData.get('emqx_username') || null;
+        data.emqx_password = formData.get('emqx_password') || null;
+        data.emqx_topic = formData.get('emqx_topic');
+        data.emqx_use_tls = document.getElementById('emqx_use_tls').checked;
+    }
+    
+    // Add device type specific fields
+    if (deviceType === 'EvaraTank') {
+        data.tank_height = formData.get('tank_height') ? parseFloat(formData.get('tank_height')) : null;
+        data.distance_field = formData.get('distance_field');
+        data.temperature_field = formData.get('temperature_field');
+        data.filtering_method = document.getElementById('filtering_method').value || 'none';
+        data.filter_window = parseInt(document.getElementById('filter_window').value) || 5;
+        
+        // Validate EvaraTank fields
+        if (!data.tank_height || !data.distance_field || !data.temperature_field) {
+            showAlert('Please fill in all required EvaraTank configuration fields', 'warning');
+            return;
+        }
+    } else if (deviceType === 'EvaraFlow') {
+        data.meter_reading_field = formData.get('meter_reading_field');
+        data.flow_rate_field = document.getElementById('flow_rate_field_ef').value;
+        data.filtering_method = document.getElementById('filtering_method_ef').value || 'none';
+        data.filter_window = parseInt(document.getElementById('filter_window_ef').value) || 5;
+        
+        // Validate EvaraFlow fields
+        if (!data.meter_reading_field || !data.flow_rate_field) {
+            showAlert('Please fill in all required EvaraFlow configuration fields', 'warning');
+            return;
+        }
+    } else if (deviceType === 'EvaraValve') {
+        data.flow_rate_field = document.getElementById('flow_rate_field_ev').value;
+        data.liters_field = formData.get('liters_field');
+        data.filtering_method = document.getElementById('filtering_method_ev').value || 'none';
+        data.filter_window = parseInt(document.getElementById('filter_window_ev').value) || 5;
+        
+        // Validate EvaraValve fields
+        if (!data.flow_rate_field || !data.liters_field) {
+            showAlert('Please fill in all required EvaraValve configuration fields', 'warning');
+            return;
+        }
+    } else if (deviceType === 'EvaraDeep') {
+        data.distance_field = document.getElementById('distance_field_ed').value;
+        data.filtering_method = document.getElementById('filtering_method_ed').value || 'none';
+        data.filter_window = parseInt(document.getElementById('filter_window_ed').value) || 5;
+        
+        // Validate EvaraDeep fields
+        if (!data.distance_field) {
+            showAlert('Please fill in all required EvaraDeep configuration fields', 'warning');
+            return;
+        }
+    } else if (deviceType === 'EvaraTDS') {
+        data.temperature_field = document.getElementById('temperature_field_et').value;
+        data.tds_field = formData.get('tds_field');
+        data.filtering_method = document.getElementById('filtering_method_et').value || 'none';
+        data.filter_window = parseInt(document.getElementById('filter_window_et').value) || 5;
+        
+        // Validate EvaraTDS fields
+        if (!data.temperature_field || !data.tds_field) {
+            showAlert('Please fill in all required EvaraTDS configuration fields', 'warning');
+            return;
+        }
+    }
+    
+    // Basic validation
+    if (!data.name || !data.device_type || !data.ctop_url_1 || !data.auth_token) {
+        showAlert('Please fill in all required common fields', 'warning');
+        return;
+    }
+    if (isEmqx && (!data.emqx_broker_url || !data.emqx_topic)) {
+        showAlert('Please enter EMQX Broker URL and MQTT Topic', 'warning');
+        return;
+    }
+    if (!isEmqx && (!data.channel_id || !data.api_key)) {
+        showAlert('Please enter ThingSpeak Channel ID and API Key', 'warning');
+        return;
+    }
+    
+    showLoading();
+    
+    fetch('/devices/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(result => {
+        hideLoading();
+        if (result.success) {
+            showAlert('Device added successfully!', 'success');
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 1500);
+        } else {
+            showAlert(`Error: ${result.error}`, 'danger');
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        console.error('Error adding device:', error);
+        showAlert('Error adding device. Please try again.', 'danger');
+    });
+});
+</script>
+{% endblock %}

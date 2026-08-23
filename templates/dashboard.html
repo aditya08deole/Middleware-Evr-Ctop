@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="{{ url_for('static', filename='js/realtime-dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div>
+            <h2 style="font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em;">
+                <i class="bi bi-speedometer2" style="color: var(--primary-color);"></i> Dashboard
+            </h2>
+            <p class="text-muted mb-0" style="font-size: 0.875rem; letter-spacing: 0.02em;">Monitor and manage your IoT devices</p>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4" id="stats">
+    <div class="col-md-3">
+        <div class="stats-card text-center">
+            <div class="card-title">Total Devices</div>
+            <h2 id="total-devices">-</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card text-center text-success">
+            <div class="card-title">Active Devices</div>
+            <h2 id="active-devices">-</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card text-center">
+            <div class="card-title">Total Logs</div>
+            <h2 id="total-logs">-</h2>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="stats-card text-center text-danger">
+            <div class="card-title">Error Logs</div>
+            <h2 id="error-logs">-</h2>
+        </div>
+    </div>
+</div>
+
+
+<!-- Devices List -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="d-flex align-items-center flex-wrap gap-3">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-device-hdd me-1"></i> Registered Devices</h5>
+                    
+                    <!-- Device Status Filter Tabs -->
+                    <div class="device-filter-pills d-inline-flex gap-1 p-1 bg-light rounded-pill border" role="tablist">
+                        <button class="device-filter-btn active" data-filter="all" onclick="filterDevices('all')">
+                            All <span class="badge rounded-pill bg-secondary ms-1" id="filter-count-all">0</span>
+                        </button>
+                        <button class="device-filter-btn" data-filter="active" onclick="filterDevices('active')">
+                            Active <span class="badge rounded-pill bg-success ms-1" id="filter-count-active">0</span>
+                        </button>
+                        <button class="device-filter-btn" data-filter="error" onclick="filterDevices('error')">
+                            Errors <span class="badge rounded-pill bg-danger ms-1" id="filter-count-error">0</span>
+                        </button>
+                        <button class="device-filter-btn" data-filter="inactive" onclick="filterDevices('inactive')">
+                            Inactive <span class="badge rounded-pill bg-warning text-dark ms-1" id="filter-count-inactive">0</span>
+                        </button>
+                    </div>
+                </div>
+                <a href="/add-device" class="btn btn-sm btn-success rounded-pill px-3">
+                    <i class="bi bi-plus-lg me-1"></i> Add Device
+                </a>
+            </div>
+            <div class="card-body">
+                <div id="loading" style="display: none; text-align: center; padding: 20px;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table table-hover" id="devices-table">
+                        <thead>
+                            <tr>
+                                <th>Device ID</th>
+                                <th>Device Type</th>
+                                <th>Source / Channel</th>
+                                <th>Status</th>
+                                <th>Last Sync</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="devices-body">
+                            <tr>
+                                <td colspan="6" class="text-center">Loading devices...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let devices = [];
+
+// Note: loadStats, loadDevices, renderDevices, loadRecentLogs, and renderLogs 
+// are now handled by RealtimeDashboard in static/js/realtime-dashboard.js
+
+function fetchDevice(deviceId) {
+    showLoading();
+    fetch(`/devices/${deviceId}/fetch`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                showAlert(`Device synced successfully! Processed ${data.data.entries_processed} entries.`, 'success');
+                // Real-time dashboard will update automatically
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error fetching device:', error);
+            showAlert('Error syncing device', 'danger');
+        });
+}
+
+function refreshMirror() {
+    showLoading();
+    fetch('/devices/refresh-mirror', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                showAlert('Local mirror updated from Firebase!', 'success');
+                // Real-time dashboard will update automatically
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error refreshing mirror:', error);
+            showAlert('Error refreshing mirror', 'danger');
+        });
+}
+
+function fetchAllDevices() {
+    showLoading();
+    fetch('/data/fetch-all', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                showAlert(`Synced ${data.data.successful}/${data.data.total_devices} devices successfully.`, 'success');
+                // Real-time dashboard will update automatically
+            } else {
+                showAlert(`Error: ${data.error}`, 'danger');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error fetching all devices:', error);
+            showAlert('Error syncing devices', 'danger');
+        });
+}
+
+function toggleDevice(deviceId) {
+    fetch(`/devices/${deviceId}/toggle`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'info');
+                // Real-time dashboard will update automatically
+            }
+        })
+        .catch(error => console.error('Error toggling device:', error));
+}
+
+function deleteDevice(deviceId) {
+    if (!confirm('Are you sure you want to delete this device?')) return;
+    
+    fetch(`/devices/${deviceId}`, { method: 'DELETE' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('Device deleted successfully', 'success');
+                // Real-time dashboard will update automatically
+            }
+        })
+        .catch(error => console.error('Error deleting device:', error));
+}
+
+function viewLogs(deviceId) {
+    showLoading();
+    fetch(`/devices/${deviceId}/logs`)
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            if (data.success) {
+                renderLogs(data.data);
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error loading logs:', error);
+        });
+}
+
+function filterDevices(filterType) {
+    if (window.dashboard && typeof window.dashboard.setFilter === 'function') {
+        window.dashboard.setFilter(filterType);
+    } else {
+        console.warn('Dashboard instance not initialized yet.');
+    }
+}
+
+// Load data on page load - Handled by realtime-dashboard.js
+document.addEventListener('DOMContentLoaded', () => {
+    // Initial data is now managed by RealtimeDashboard class in static/js/realtime-dashboard.js
+    console.log("Dashboard initialized. Real-time updates active.");
+});
+</script>
+{% endblock %}

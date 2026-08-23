@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block title %}Add Device - CTOP IoT Pipeline{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="bi bi-plus-circle"></i> Add New Device</h4>
+                </div>
+                <div class="card-body">
+                    <!-- Progress Bar -->
+                    <div class="progress mb-4" style="height: 6px;">
+                        <div class="progress-bar" id="form-progress" role="progressbar" style="width: 25%" aria-valuenow="1" aria-valuemin="1" aria-valuemax="4"></div>
+                    </div>
+                    
+                    <!-- Step Indicators -->
+                    <div class="step-indicators mb-4">
+                        <div class="step-indicator active" data-step="1">
+                            <div class="step-number">1</div>
+                            <div class="step-label">Basic Info</div>
+                        </div>
+                        <div class="step-indicator" data-step="2">
+                            <div class="step-number">2</div>
+                            <div class="step-label">CTOP Config</div>
+                        </div>
+                        <div class="step-indicator" data-step="3">
+                            <div class="step-number">3</div>
+                            <div class="step-label">Metadata</div>
+                        </div>
+                        <div class="step-indicator" data-step="4">
+                            <div class="step-number">4</div>
+                            <div class="step-label">Review</div>
+                        </div>
+                    </div>
+                    
+                    <form id="multi-step-form">
+                        <!-- Step 1: Basic Info -->
+                        <div class="form-step active" id="step-1">
+                            <h5 class="mb-3">Step 1: Basic Information</h5>
+                            <div class="mb-3">
+                                <label for="device-name" class="form-label">Device ID *</label>
+                                <input type="text" class="form-control" id="device-name" name="name" required minlength="3" maxlength="100">
+                                <div class="form-text">Unique identifier for this device (e.g., EVARA001, TANK_A1)</div>
+                                <div data-error="name"></div>
+                            </div>
+                            
+                            <!-- Data Source Platform Selector -->
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Data Source Platform *</label>
+                                <div class="btn-group w-100" role="group" aria-label="Data source platform">
+                                    <input type="radio" class="btn-check" name="data_source" id="platform-thingspeak" value="thingspeak" checked autocomplete="off" onchange="togglePlatformFields()">
+                                    <label class="btn btn-outline-primary" for="platform-thingspeak">
+                                        <i class="bi bi-cloud-arrow-down"></i> ThingSpeak
+                                    </label>
+                                    <input type="radio" class="btn-check" name="data_source" id="platform-emqx" value="emqx" autocomplete="off" onchange="togglePlatformFields()">
+                                    <label class="btn btn-outline-success" for="platform-emqx">
+                                        <i class="bi bi-broadcast"></i> EMQX (MQTT)
+                                    </label>
+                                </div>
+                                <div class="form-text">Choose how this device sends data to the middleware</div>
+                            </div>
+                            
+                            <!-- ThingSpeak Fields (shown by default) -->
+                            <div id="thingspeak-fields">
+                                <div class="mb-3">
+                                    <label for="channel-id" class="form-label">ThingSpeak Channel ID *</label>
+                                    <input type="text" class="form-control" id="channel-id" name="channel_id" required>
+                                    <div class="form-text">The numeric ID of your ThingSpeak channel</div>
+                                    <div data-error="channel_id"></div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="api-key" class="form-label">ThingSpeak Read API Key *</label>
+                                    <input type="password" class="form-control" id="api-key" name="api_key" required minlength="8" maxlength="32">
+                                    <div class="form-text">Your ThingSpeak Read API Key (8-32 characters)</div>
+                                    <div data-error="api_key"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- EMQX Fields (hidden by default) -->
+                            <div id="emqx-fields" style="display: none;">
+                                <div class="alert alert-info py-2">
+                                    <small><i class="bi bi-info-circle"></i> EMQX uses MQTT protocol for real-time push-based data delivery.</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="emqx-broker-url" class="form-label">EMQX Broker URL *</label>
+                                    <input type="text" class="form-control" id="emqx-broker-url" name="emqx_broker_url" placeholder="broker.emqx.io">
+                                    <div class="form-text">Hostname or IP of your EMQX broker</div>
+                                    <div data-error="emqx_broker_url"></div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx-port" class="form-label">Port</label>
+                                        <input type="number" class="form-control" id="emqx-port" name="emqx_port" value="1883" min="1" max="65535">
+                                        <div class="form-text">1883 (TCP) or 8883 (TLS)</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3 d-flex align-items-end">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="emqx-use-tls" name="emqx_use_tls">
+                                            <label class="form-check-label" for="emqx-use-tls">
+                                                <i class="bi bi-shield-lock"></i> Use TLS/SSL
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx-username" class="form-label">Username</label>
+                                        <input type="text" class="form-control" id="emqx-username" name="emqx_username" placeholder="Optional">
+                                        <div data-error="emqx_username"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx-password" class="form-label">Password</label>
+                                        <input type="password" class="form-control" id="emqx-password" name="emqx_password" placeholder="Optional">
+                                        <div data-error="emqx_password"></div>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="emqx-topic" class="form-label">MQTT Topic *</label>
+                                    <input type="text" class="form-control" id="emqx-topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
+                                    <div class="form-text">The MQTT topic your device publishes data to</div>
+                                    <div data-error="emqx_topic"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="d-flex justify-content-end">
+                                <button type="button" class="btn btn-primary" onclick="nextStep()">
+                                    Next <i class="bi bi-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Step 2: CTOP Configuration -->
+                        <div class="form-step" id="step-2">
+                            <h5 class="mb-3">Step 2: CTOP Configuration</h5>
+                            <div class="mb-3">
+                                <label for="ctop-url-1" class="form-label">CTOP Endpoint URL *</label>
+                                <input type="url" class="form-control" id="ctop-url-1" name="ctop_url_1" required placeholder="https://ctop.iiit.ac.in/api/nodes/create-cin/391">
+                                <div class="form-text">CTOP node endpoint URL (include the node ID at the end)</div>
+                                <div data-error="ctop_url_1"></div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="auth-token" class="form-label">CTOP API Authorization Header *</label>
+                                <input type="text" class="form-control" id="auth-token" name="auth_token" required placeholder="Bearer b1a8f4503e741e05f88699bb7c91c02a">
+                                <div class="form-text">Full Authorization header value (e.g., Bearer b1a8f4503e741e05f88699bb7c91c02a)</div>
+                                <div data-error="auth_token"></div>
+                            </div>
+                            <div class="mb-3">
+                                <button type="button" class="btn btn-outline-primary" onclick="testConnection()">
+                                    <i class="bi bi-check-circle"></i> Test Connection
+                                </button>
+                                <span id="connection-status" class="ms-2"></span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <button type="button" class="btn btn-secondary" onclick="previousStep()">
+                                    <i class="bi bi-arrow-left"></i> Previous
+                                </button>
+                                <button type="button" class="btn btn-primary" onclick="nextStep()">
+                                    Next <i class="bi bi-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Step 3: Metadata -->
+                        <div class="form-step" id="step-3" style="display: none;">
+                            <h5 class="mb-3">Step 3: Location</h5>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="latitude" class="form-label">Latitude</label>
+                                    <input type="number" class="form-control" id="latitude" name="latitude" step="any" min="-90" max="90">
+                                    <div class="form-text">-90 to 90</div>
+                                    <div data-error="latitude"></div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="longitude" class="form-label">Longitude</label>
+                                    <input type="number" class="form-control" id="longitude" name="longitude" step="any" min="-180" max="180">
+                                    <div class="form-text">-180 to 180</div>
+                                    <div data-error="longitude"></div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="location" class="form-label">Location Name</label>
+                                <input type="text" class="form-control" id="location" name="location">
+                                <div class="form-text">Human-readable location name</div>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <button type="button" class="btn btn-secondary" onclick="previousStep()">
+                                    <i class="bi bi-arrow-left"></i> Previous
+                                </button>
+                                <button type="button" class="btn btn-primary" onclick="nextStep()">
+                                    Next <i class="bi bi-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Step 4: Review -->
+                        <div class="form-step" id="step-4" style="display: none;">
+                            <h5 class="mb-3">Step 4: Review & Confirm</h5>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> Please review the device configuration before creating.
+                            </div>
+                            <div id="review-content" class="review-section">
+                                <!-- Will be populated dynamically -->
+                            </div>
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="confirm-create" required>
+                                <label class="form-check-label" for="confirm-create">
+                                    I confirm that the above information is correct
+                                </label>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <button type="button" class="btn btn-secondary" onclick="previousStep()">
+                                    <i class="bi bi-arrow-left"></i> Previous
+                                </button>
+                                <button type="submit" class="btn btn-success" id="submit-btn">
+                                    <i class="bi bi-check-circle"></i> Create Device
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.step-indicators {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+}
+
+.step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    opacity: 0.5;
+    transition: opacity 0.3s;
+}
+
+.step-indicator.active {
+    opacity: 1;
+}
+
+.step-indicator.completed {
+    opacity: 1;
+}
+
+.step-number {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    transition: background 0.3s;
+}
+
+.step-indicator.active .step-number {
+    background: var(--primary-color);
+    color: white;
+}
+
+.step-indicator.completed .step-number {
+    background: var(--secondary-color);
+    color: white;
+}
+
+.step-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.form-step {
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.review-section {
+    background: var(--background-color);
+    padding: 1.5rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1.5rem;
+}
+
+.review-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-light);
+}
+
+.review-item:last-child {
+    border-bottom: none;
+}
+
+.review-label {
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.review-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+</style>
+
+<script src="{{ url_for('static', filename='js/multi-step-form.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,1090 @@
+/* ==========================================================================
+   Ultra-Liquid Glass Design System (Light / White Theme)
+   CTOP IoT Data Pipeline Middleware
+   ========================================================================== */
+
+:root {
+    /* Apple / VisionOS System Colors */
+    --ios-blue: #007AFF;
+    --ios-blue-dark: #0062CC;
+    --ios-blue-light: #409CFF;
+    --ios-blue-bg: rgba(0, 122, 255, 0.09);
+    
+    --ios-teal: #30B0C7;
+    --ios-green: #34C759;
+    --ios-green-dark: #28A745;
+    --ios-green-bg: rgba(52, 199, 89, 0.11);
+    
+    --ios-indigo: #5856D6;
+    --ios-purple: #AF52DE;
+    --ios-pink: #FF2D55;
+    --ios-orange: #FF9500;
+    --ios-yellow: #FFCC00;
+    --ios-red: #FF3B30;
+    --ios-red-bg: rgba(255, 59, 48, 0.09);
+    
+    /* Primary / Secondary tokens */
+    --primary-color: #007AFF;
+    --primary-dark: #0056B3;
+    --primary-light: #409CFF;
+    --primary-gradient: linear-gradient(135deg, #007AFF 0%, #0056B3 100%);
+    --primary-glow: rgba(0, 122, 255, 0.3);
+    
+    --secondary-color: #34C759;
+    --secondary-dark: #248A3D;
+    --accent-color: #30B0C7;
+    --secondary-gradient: linear-gradient(135deg, #34C759 0%, #28A745 100%);
+    --secondary-glow: rgba(52, 199, 89, 0.3);
+    
+    /* Liquid Glass Material Physics */
+    --canvas-bg: #F4F6F9;
+    --liquid-glass-surface: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.6) 45%, rgba(255, 255, 255, 0.44) 100%);
+    --liquid-glass-surface-hover: linear-gradient(135deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.72) 45%, rgba(255, 255, 255, 0.56) 100%);
+    --liquid-glass-island: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.7) 100%);
+    
+    /* Liquid Specular Highlights & Bevels */
+    --liquid-glass-border: 1px solid rgba(255, 255, 255, 0.9);
+    --liquid-glass-bevel: inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.98), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.02);
+    --liquid-glass-bevel-hover: inset 0 2px 1.5px 0 rgba(255, 255, 255, 1), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.02);
+    
+    /* Liquid Refraction Blur */
+    --liquid-blur-deep: blur(32px) saturate(210%) brightness(104%);
+    --liquid-blur-nav: blur(38px) saturate(220%) brightness(105%);
+    --liquid-blur-thin: blur(18px) saturate(180%);
+    
+    /* Fluid Elevation Shadows */
+    --liquid-shadow-sm: 0 4px 16px -2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+    --liquid-shadow-md: 0 16px 40px -8px rgba(15, 23, 42, 0.07), 0 4px 12px -2px rgba(15, 23, 42, 0.03);
+    --liquid-shadow-lg: 0 26px 56px -12px rgba(15, 23, 42, 0.11), 0 6px 18px -4px rgba(15, 23, 42, 0.04);
+    
+    /* iOS Typography Colors */
+    --text-primary: #0F172A;
+    --text-secondary: #475569;
+    --text-tertiary: #94A3B8;
+    
+    /* Radii */
+    --radius-ios-sm: 10px;
+    --radius-ios-md: 14px;
+    --radius-ios-lg: 20px;
+    --radius-ios-xl: 26px;
+    --radius-ios-pill: 9999px;
+    
+    /* Springs */
+    --spring-fluid: 340ms cubic-bezier(0.22, 1, 0.36, 1);
+    --spring-snappy: 200ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* ==========================================================================
+   Global Ambient Canvas & Fluid Orbs Engine
+   ========================================================================== */
+
+* {
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body.liquid-glass-app {
+    background-color: var(--canvas-bg);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Plus Jakarta Sans", "Inter", sans-serif;
+    min-height: 100vh;
+    letter-spacing: -0.015em;
+    position: relative;
+    overflow-x: hidden;
+    padding-bottom: 3.5rem;
+}
+
+/* Ambient Fluid Refraction Background Mesh */
+.liquid-ambient-canvas {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    overflow: hidden;
+    opacity: 0.85;
+}
+
+.liquid-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(100px);
+    will-change: transform;
+}
+
+.liquid-orb-1 {
+    width: 650px;
+    height: 650px;
+    top: -120px;
+    left: -80px;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.38) 0%, rgba(2, 132, 199, 0.18) 50%, transparent 75%);
+    animation: floatOrb1 24s ease-in-out infinite alternate;
+}
+
+.liquid-orb-2 {
+    width: 600px;
+    height: 600px;
+    top: 15%;
+    right: -100px;
+    background: radial-gradient(circle, rgba(52, 211, 153, 0.32) 0%, rgba(16, 185, 129, 0.16) 50%, transparent 75%);
+    animation: floatOrb2 28s ease-in-out infinite alternate;
+}
+
+.liquid-orb-3 {
+    width: 550px;
+    height: 550px;
+    bottom: -100px;
+    left: 30%;
+    background: radial-gradient(circle, rgba(129, 140, 248, 0.28) 0%, rgba(99, 102, 241, 0.14) 50%, transparent 75%);
+    animation: floatOrb3 30s ease-in-out infinite alternate;
+}
+
+@keyframes floatOrb1 {
+    0% { transform: translate(0px, 0px) scale(1); }
+    50% { transform: translate(80px, 60px) scale(1.08); }
+    100% { transform: translate(-40px, 100px) scale(0.95); }
+}
+
+@keyframes floatOrb2 {
+    0% { transform: translate(0px, 0px) scale(1); }
+    50% { transform: translate(-90px, 70px) scale(1.06); }
+    100% { transform: translate(50px, -50px) scale(0.92); }
+}
+
+@keyframes floatOrb3 {
+    0% { transform: translate(0px, 0px) scale(1); }
+    50% { transform: translate(60px, -80px) scale(1.1); }
+    100% { transform: translate(-80px, -40px) scale(0.96); }
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Plus Jakarta Sans", sans-serif;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.025em;
+}
+
+/* ==========================================================================
+   Liquid Dynamic Island Capsule (Navigation)
+   ========================================================================== */
+
+/* ==========================================================================
+   Ultra-Liquid Glass Command Navigation Bar
+   ========================================================================== */
+
+/* ==========================================================================
+   Ultra-Liquid Glass Command Navigation Capsule (Dynamic Island)
+   ========================================================================== */
+
+.floating-nav-header {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 95vw;
+    z-index: 1050;
+    transition: all var(--spring-fluid);
+}
+
+.nav-glass-container {
+    background: var(--liquid-glass-island);
+    backdrop-filter: var(--liquid-blur-nav);
+    -webkit-backdrop-filter: var(--liquid-blur-nav);
+    border: var(--liquid-glass-border);
+    border-radius: var(--radius-ios-pill);
+    box-shadow: 
+        0 20px 46px -8px rgba(15, 23, 42, 0.1),
+        0 4px 16px -2px rgba(15, 23, 42, 0.04),
+        var(--liquid-glass-bevel);
+    padding: 7px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    transition: all var(--spring-fluid);
+}
+
+.floating-nav-header:hover .nav-glass-container {
+    background: rgba(255, 255, 255, 0.97);
+    box-shadow: 
+        0 24px 56px -10px rgba(15, 23, 42, 0.13),
+        0 6px 20px -4px rgba(15, 23, 42, 0.05),
+        var(--liquid-glass-bevel-hover);
+}
+
+/* Brand Identity */
+.nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none !important;
+    transition: transform var(--spring-snappy);
+}
+
+.nav-brand:hover {
+    transform: scale(1.03);
+}
+
+.brand-icon-wrapper {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-ios-md);
+    background: var(--primary-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 1.05rem;
+    box-shadow: 0 3px 10px var(--primary-glow);
+}
+
+.brand-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.05;
+}
+
+.brand-title {
+    font-weight: 800;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+}
+
+.brand-subtitle-ctop {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--ios-blue);
+    letter-spacing: -0.01em;
+    margin-top: 1px;
+}
+
+/* Navigation Links */
+.nav-center {
+    display: flex;
+    align-items: center;
+}
+
+.nav-menu {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    gap: 8px;
+}
+
+.nav-menu .nav-link {
+    color: var(--text-secondary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 10px 22px;
+    border-radius: var(--radius-ios-pill);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    transition: all var(--spring-snappy);
+    border: 0.5px solid transparent;
+}
+
+.nav-menu .nav-link:hover {
+    color: var(--ios-blue);
+    background: rgba(0, 122, 255, 0.08);
+}
+
+.nav-menu .nav-link:active {
+    transform: scale(0.96);
+}
+
+.nav-menu .nav-link.active {
+    color: #ffffff !important;
+    background: var(--primary-gradient);
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 
+        0 4px 18px var(--primary-glow),
+        inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+.nav-menu .nav-link i {
+    font-size: 1.15rem;
+    transition: transform var(--spring-snappy);
+}
+
+.nav-menu .nav-link:hover i {
+    transform: scale(1.15);
+}
+
+/* Header Action Buttons (Icon-Only Default, Expand on Hover) */
+.nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.nav-icon-action-btn {
+    background: rgba(15, 23, 42, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    color: var(--text-primary);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--spring-snappy);
+}
+
+.nav-icon-action-btn i {
+    font-size: 1.2rem;
+}
+
+.nav-icon-action-btn:hover {
+    transform: translateY(-2px) scale(1.06);
+}
+
+.btn-mirror-refresh {
+    background: rgba(14, 165, 233, 0.08);
+    color: #0284c7;
+    border: 1px solid rgba(14, 165, 233, 0.22);
+}
+
+.btn-mirror-refresh:hover {
+    background: #0284c7;
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+}
+
+.btn-sync-all {
+    background: rgba(0, 122, 255, 0.08);
+    color: var(--ios-blue);
+    border: 1px solid rgba(0, 122, 255, 0.22);
+}
+
+.btn-sync-all:hover {
+    background: var(--ios-blue);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--primary-glow);
+}
+
+.spin-icon.spinning {
+    animation: spinRotate 0.8s linear infinite;
+}
+
+@keyframes spinRotate {
+    100% { transform: rotate(360deg); }
+}
+
+/* Mobile Drawer */
+.mobile-nav-drawer {
+    margin-top: 8px;
+}
+
+.mobile-drawer-inner {
+    background: var(--liquid-glass-island);
+    backdrop-filter: var(--liquid-blur-nav);
+    -webkit-backdrop-filter: var(--liquid-blur-nav);
+    border: var(--liquid-glass-border);
+    border-radius: var(--radius-ios-lg);
+    box-shadow: var(--liquid-shadow-md);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mobile-nav-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: var(--radius-ios-md);
+    color: var(--text-primary);
+    text-decoration: none;
+    font-weight: 600;
+    transition: all var(--spring-snappy);
+}
+
+.mobile-nav-link.active,
+.mobile-nav-link:hover {
+    background: rgba(0, 122, 255, 0.1);
+    color: var(--ios-blue);
+}
+
+/* ==========================================================================
+   Ultra-Liquid Glass Panels & Cards
+   ========================================================================== */
+
+.card {
+    background: var(--liquid-glass-surface);
+    backdrop-filter: var(--liquid-blur-deep);
+    -webkit-backdrop-filter: var(--liquid-blur-deep);
+    border: var(--liquid-glass-border);
+    border-radius: var(--radius-ios-xl);
+    box-shadow: var(--liquid-shadow-md), var(--liquid-glass-bevel);
+    transition: all var(--spring-fluid);
+    overflow: hidden;
+    margin-bottom: 1.6rem;
+    position: relative;
+}
+
+.card:hover {
+    background: var(--liquid-glass-surface-hover);
+    box-shadow: var(--liquid-shadow-lg), var(--liquid-glass-bevel-hover);
+    transform: translateY(-4px) scale(1.006);
+}
+
+.card-header {
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: var(--liquid-blur-thin);
+    -webkit-backdrop-filter: var(--liquid-blur-thin);
+    border-bottom: 0.5px solid rgba(226, 232, 240, 0.8);
+    padding: 1.25rem 1.75rem;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+}
+
+.card-header.bg-primary {
+    background: var(--primary-gradient) !important;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.25);
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+
+.card-body {
+    padding: 1.75rem;
+}
+
+.card-footer {
+    background: rgba(255, 255, 255, 0.4);
+    border-top: 0.5px solid rgba(226, 232, 240, 0.8);
+    padding: 1.25rem 1.75rem;
+}
+
+/* ==========================================================================
+   Liquid Glass Stats Widgets
+   ========================================================================== */
+
+.stats-card {
+    background: var(--liquid-glass-surface);
+    backdrop-filter: var(--liquid-blur-deep);
+    -webkit-backdrop-filter: var(--liquid-blur-deep);
+    border: var(--liquid-glass-border);
+    border-radius: var(--radius-ios-xl);
+    padding: 1.5rem 1.65rem;
+    box-shadow: var(--liquid-shadow-md), var(--liquid-glass-bevel);
+    transition: all var(--spring-fluid);
+    position: relative;
+    overflow: hidden;
+}
+
+.stats-card::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
+    opacity: 0.7;
+}
+
+.stats-card:hover {
+    background: var(--liquid-glass-surface-hover);
+    transform: translateY(-4px) scale(1.012);
+    box-shadow: var(--liquid-shadow-lg), var(--liquid-glass-bevel-hover);
+}
+
+.stats-card .card-title {
+    font-size: 0.78125rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.45rem;
+}
+
+.stats-card h2 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin: 0;
+    line-height: 1.1;
+    color: var(--text-primary);
+    letter-spacing: -0.035em;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+}
+
+.stats-card.text-success h2 {
+    color: var(--ios-green-dark);
+}
+
+.stats-card.text-danger h2 {
+    color: var(--ios-red);
+}
+
+/* Realtime pulse animation on stats */
+.stat-glow {
+    animation: liquidStatPulse 1s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes liquidStatPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(0, 122, 255, 0.45), var(--liquid-glass-bevel-hover);
+    }
+    100% {
+        box-shadow: var(--liquid-shadow-md), var(--liquid-glass-bevel);
+    }
+}
+
+/* ==========================================================================
+   Liquid Inset Table Container
+   ========================================================================== */
+
+.table-responsive {
+    border-radius: var(--radius-ios-lg);
+    background: var(--liquid-glass-surface);
+    backdrop-filter: var(--liquid-blur-deep);
+    -webkit-backdrop-filter: var(--liquid-blur-deep);
+    border: var(--liquid-glass-border);
+    box-shadow: var(--liquid-shadow-sm), var(--liquid-glass-bevel);
+    overflow: hidden;
+}
+
+.table {
+    margin-bottom: 0;
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.table thead th {
+    background: rgba(248, 250, 252, 0.75);
+    backdrop-filter: var(--liquid-blur-thin);
+    color: var(--text-secondary);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-weight: 700;
+    font-size: 0.78125rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1rem 1.35rem;
+    border-bottom: 0.5px solid rgba(226, 232, 240, 0.8);
+    white-space: nowrap;
+}
+
+.table tbody td {
+    padding: 1.1rem 1.35rem;
+    vertical-align: middle;
+    border-bottom: 0.5px solid rgba(226, 232, 240, 0.6);
+    font-size: 0.9375rem;
+    transition: background var(--spring-snappy);
+}
+
+.table tbody tr:hover {
+    background: rgba(255, 255, 255, 0.92) !important;
+}
+
+.table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ==========================================================================
+   Liquid Form Inputs & Droplet Controls
+   ========================================================================== */
+
+.form-control, .form-select {
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: var(--liquid-blur-thin);
+    -webkit-backdrop-filter: var(--liquid-blur-thin);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: var(--radius-ios-md);
+    padding: 0.75rem 1rem;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+    transition: all var(--spring-snappy);
+}
+
+.form-control:focus, .form-select:focus {
+    background: #ffffff;
+    border-color: var(--ios-blue);
+    box-shadow: 
+        0 0 0 3.5px rgba(0, 122, 255, 0.16),
+        inset 0 1px 2px rgba(0, 0, 0, 0.02);
+    outline: none;
+    color: var(--text-primary);
+}
+
+.form-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: var(--text-primary);
+    margin-bottom: 0.45rem;
+    letter-spacing: -0.01em;
+}
+
+.form-text {
+    font-size: 0.8125rem;
+    color: var(--text-tertiary);
+    margin-top: 0.35rem;
+}
+
+/* Liquid Droplet Segmented Platform Toggle */
+.btn-group[aria-label="Data source platform"], 
+.ios-segmented-control {
+    background: rgba(226, 232, 240, 0.65);
+    backdrop-filter: var(--liquid-blur-thin);
+    padding: 4px;
+    border-radius: var(--radius-ios-pill);
+    border: 0.5px solid rgba(255, 255, 255, 0.9);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.btn-group[aria-label="Data source platform"] .btn {
+    border-radius: var(--radius-ios-pill) !important;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border: none;
+    color: var(--text-secondary);
+    background: transparent;
+    transition: all var(--spring-snappy);
+}
+
+.btn-check:checked + .btn-outline-primary {
+    background: #ffffff !important;
+    color: var(--ios-blue) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+.btn-check:checked + .btn-outline-success {
+    background: #ffffff !important;
+    color: var(--ios-green-dark) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* ==========================================================================
+   Buttons with Liquid Sheen
+   ========================================================================== */
+
+.btn {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+    font-weight: 600;
+    padding: 0.68rem 1.4rem;
+    border-radius: var(--radius-ios-md);
+    transition: all var(--spring-snappy);
+    letter-spacing: -0.01em;
+    font-size: 0.875rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: none;
+}
+
+.btn:active {
+    transform: scale(0.965);
+}
+
+.btn-primary {
+    background: var(--primary-gradient);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--primary-glow), inset 0 1px 0.5px rgba(255, 255, 255, 0.4);
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #0069d9 0%, #004da8 100%);
+    color: #ffffff;
+    box-shadow: 0 8px 20px rgba(0, 122, 255, 0.42);
+    transform: translateY(-1.5px);
+}
+
+.btn-success {
+    background: var(--secondary-gradient);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--secondary-glow), inset 0 1px 0.5px rgba(255, 255, 255, 0.4);
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #2eb84e 0%, #1e7e34 100%);
+    color: #ffffff;
+    box-shadow: 0 8px 20px rgba(52, 199, 89, 0.42);
+    transform: translateY(-1.5px);
+}
+
+.btn-outline-primary {
+    color: var(--ios-blue);
+    background: var(--ios-blue-bg);
+    border: 0.5px solid rgba(0, 122, 255, 0.25);
+}
+
+.btn-outline-primary:hover {
+    background: var(--ios-blue);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--primary-glow);
+}
+
+.btn-outline-info {
+    color: var(--ios-blue);
+    background: rgba(0, 122, 255, 0.08);
+    border: 0.5px solid rgba(0, 122, 255, 0.2);
+}
+
+.btn-outline-info:hover {
+    background: var(--ios-blue);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(0, 122, 255, 0.28);
+}
+
+.btn-outline-danger {
+    color: var(--ios-red);
+    background: var(--ios-red-bg);
+    border: 0.5px solid rgba(255, 59, 48, 0.25);
+}
+
+.btn-outline-danger:hover {
+    background: var(--ios-red);
+    color: #ffffff;
+}
+
+.btn-outline-secondary {
+    color: var(--text-secondary);
+    background: rgba(142, 142, 147, 0.09);
+    border: 0.5px solid rgba(142, 142, 147, 0.2);
+}
+
+.btn-outline-secondary:hover {
+    background: var(--text-secondary);
+    color: #ffffff;
+}
+
+.btn-sm {
+    padding: 0.36rem 0.8rem;
+    font-size: 0.8125rem;
+    border-radius: var(--radius-ios-sm);
+}
+
+/* ==========================================================================
+   Liquid Tinted Badges & Pulsing Dots
+   ========================================================================== */
+
+.badge {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    font-weight: 600;
+    padding: 0.35em 0.8em;
+    border-radius: var(--radius-ios-pill);
+    letter-spacing: 0.01em;
+    font-size: 0.75rem;
+}
+
+.badge.bg-primary {
+    background: var(--ios-blue-bg) !important;
+    color: var(--ios-blue-dark) !important;
+    border: 0.5px solid rgba(0, 122, 255, 0.25);
+}
+
+.badge.bg-success {
+    background: var(--ios-green-bg) !important;
+    color: var(--ios-green-dark) !important;
+    border: 0.5px solid rgba(52, 199, 89, 0.25);
+}
+
+.badge.bg-secondary {
+    background: rgba(142, 142, 147, 0.12) !important;
+    color: var(--text-secondary) !important;
+    border: 0.5px solid rgba(142, 142, 147, 0.2);
+}
+
+.badge.bg-danger {
+    background: var(--ios-red-bg) !important;
+    color: #c92a2a !important;
+    border: 0.5px solid rgba(255, 59, 48, 0.25);
+}
+
+.badge.bg-warning {
+    background: rgba(255, 149, 0, 0.12) !important;
+    color: #b76e00 !important;
+    border: 0.5px solid rgba(255, 149, 0, 0.25);
+}
+
+/* Live Active Indicator Water Ripple */
+.status-indicator {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 9px;
+    position: relative;
+}
+
+.status-indicator.online {
+    background-color: var(--ios-green);
+    box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.25);
+}
+
+.status-indicator.online::after {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background-color: var(--ios-green);
+    animation: liquidRipple 2.2s infinite cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.status-indicator.offline {
+    background-color: var(--text-tertiary);
+}
+
+@keyframes liquidRipple {
+    0% { transform: scale(1); opacity: 0.85; }
+    100% { transform: scale(2.8); opacity: 0; }
+}
+
+.status-badge {
+    font-weight: 700;
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    border-radius: var(--radius-ios-pill);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-badge.status-success {
+    background: var(--ios-green-bg);
+    color: var(--ios-green-dark);
+    border: 0.5px solid rgba(52, 199, 89, 0.25);
+}
+
+.status-badge.status-error {
+    background: var(--ios-red-bg);
+    color: #c92a2a;
+    border: 0.5px solid rgba(255, 59, 48, 0.25);
+}
+
+.status-badge.status-pending {
+    background: rgba(255, 149, 0, 0.12);
+    color: #b76e00;
+    border: 0.5px solid rgba(255, 149, 0, 0.25);
+}
+
+/* ==========================================================================
+   Liquid Alerts & Notifications
+   ========================================================================== */
+
+.alert {
+    background: var(--liquid-glass-surface);
+    backdrop-filter: var(--liquid-blur-deep);
+    -webkit-backdrop-filter: var(--liquid-blur-deep);
+    border-radius: var(--radius-ios-lg);
+    border: var(--liquid-glass-border);
+    box-shadow: var(--liquid-shadow-md), var(--liquid-glass-bevel);
+    padding: 1rem 1.35rem;
+    font-size: 0.9125rem;
+}
+
+.alert-info {
+    background: rgba(239, 246, 255, 0.9);
+    border-color: rgba(191, 219, 254, 0.85);
+    color: #0056B3;
+}
+
+.alert-success {
+    background: rgba(236, 253, 245, 0.9);
+    border-color: rgba(167, 243, 208, 0.85);
+    color: var(--ios-green-dark);
+}
+
+.alert-warning {
+    background: rgba(254, 243, 199, 0.9);
+    border-color: rgba(253, 230, 138, 0.85);
+    color: #8A4F00;
+}
+
+.alert-danger {
+    background: rgba(254, 242, 242, 0.9);
+    border-color: rgba(254, 202, 202, 0.85);
+    color: #A31B12;
+}
+
+/* ==========================================================================
+   Liquid Multi-step Wizard & Review Elements
+   ========================================================================== */
+
+.step-indicators {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 2rem;
+}
+
+.step-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    opacity: 0.42;
+    transition: opacity var(--spring-fluid);
+}
+
+.step-indicator.active, .step-indicator.completed {
+    opacity: 1;
+}
+
+.step-number {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(142, 142, 147, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.875rem;
+    margin-bottom: 0.4rem;
+    transition: all var(--spring-fluid);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.step-indicator.active .step-number {
+    background: var(--ios-blue);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--primary-glow);
+}
+
+.step-indicator.completed .step-number {
+    background: var(--ios-green);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--secondary-glow);
+}
+
+.step-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.progress {
+    background: rgba(142, 142, 147, 0.15);
+    border-radius: var(--radius-ios-pill);
+    overflow: hidden;
+    height: 6px;
+}
+
+.progress-bar {
+    background: var(--ios-blue);
+    transition: width var(--spring-fluid);
+}
+
+.review-section {
+    background: rgba(248, 250, 252, 0.75);
+    backdrop-filter: var(--liquid-blur-thin);
+    border: 0.5px solid rgba(226, 232, 240, 0.85);
+    padding: 1.5rem;
+    border-radius: var(--radius-ios-lg);
+    margin-bottom: 1.5rem;
+}
+
+.review-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 0.5px solid rgba(226, 232, 240, 0.75);
+}
+
+.review-item:last-child {
+    border-bottom: none;
+}
+
+.review-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.review-value {
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+/* Device Filter Pills */
+.device-filter-pills {
+    background: rgba(241, 245, 249, 0.8) !important;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.device-filter-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: var(--radius-ios-pill);
+    transition: all var(--spring-snappy);
+    cursor: pointer;
+}
+
+.device-filter-btn:hover {
+    color: var(--ios-blue);
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.device-filter-btn.active {
+    background: #ffffff;
+    color: var(--ios-blue);
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.btn-mirror-refresh {
+    background: rgba(14, 165, 233, 0.1);
+    color: #0284c7;
+    border: 1px solid rgba(14, 165, 233, 0.25);
+}
+
+.btn-mirror-refresh:hover {
+    background: #0284c7;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+}
+
+.btn-sync-all {
+    background: rgba(0, 122, 255, 0.1);
+    color: var(--ios-blue);
+    border: 1px solid rgba(0, 122, 255, 0.25);
+}
+
+.btn-sync-all:hover {
+    background: var(--ios-blue);
+    color: #ffffff;
+    box-shadow: 0 4px 12px var(--primary-glow);
+}
+
+/* Compact Sync Time Badge */
+.sync-time-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(241, 245, 249, 0.7);
+    padding: 3px 10px;
+    border-radius: var(--radius-ios-pill);
+    border: 0.5px solid rgba(203, 213, 225, 0.6);
+    white-space: nowrap;
+}
+
+.sync-time-pill .sync-date {
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.sync-time-pill .sync-time {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+
