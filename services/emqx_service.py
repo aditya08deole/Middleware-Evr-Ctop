@@ -126,12 +126,17 @@ class EMQXService:
                         if dev_id not in self._message_buffers:
                             self._message_buffers[dev_id] = deque(maxlen=self._max_buffer_size)
                         self._message_buffers[dev_id].append(payload)
-                    
+
                     logger.debug(
                         f"[EMQX] Device {device_name} ({device_id}): "
                         f"Received message on '{msg.topic}' "
                         f"(buffer size: {len(self._message_buffers.get(str(device_id), []))})"
                     )
+
+                    # Process instantly instead of waiting for the next scheduler
+                    # tick — MQTT is push-based, so a new reading should reach
+                    # CTOP the moment it arrives, not up to 15s later.
+                    self._trigger_instant_process(device_id, device_name)
                 except json.JSONDecodeError as e:
                     logger.warning(
                         f"[EMQX] Device {device_name} ({device_id}): "
@@ -178,10 +183,31 @@ class EMQXService:
             logger.error(f"[EMQX] Device {device_name} ({device_id}): Failed to start MQTT client: {e}")
             return False
 
+    def _trigger_instant_process(self, device_id, device_name):
+        """
+        Fire process_device_safe() in a background thread right after a
+        message is buffered, so it reaches CTOP immediately instead of
+        waiting for the next periodic scheduler tick. Deferred import avoids
+        a circular import (scheduler_firestore imports EMQXService).
+        process_device_safe() itself is a no-op if that device is already
+        being processed, so bursts of messages don't pile up duplicate runs.
+        """
+        def _run():
+            try:
+                from utils.scheduler_firestore import process_device_safe
+                from utils.local_device_store import local_device_store
+                device_data = local_device_store.get_device_by_id(str(device_id))
+                if device_data:
+                    process_device_safe(str(device_id), device_data)
+            except Exception as e:
+                logger.error(f"[EMQX] Instant-process trigger failed for {device_name} ({device_id}): {e}")
+
+        threading.Thread(target=_run, daemon=True, name=f"emqx-instant-{device_id}").start()
+
     def unsubscribe_device(self, device_id):
         """
         Stop MQTT subscription for a device and clean up.
-        
+
         Args:
             device_id: Device identifier to unsubscribe
         """

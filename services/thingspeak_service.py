@@ -78,10 +78,16 @@ class ThingSpeakService:
             data = response.json()
 
             # DUPLICATE DETECTION:
-            # In Firestore mode, apply lightweight in-memory dedup using device_last_entry_id
-            # as a first layer of defense. The scheduler provides a second dedup layer.
+            # In Firestore mode, do NOT filter here. The scheduler's own dedup
+            # (utils/scheduler_firestore.py, Step 4) is the single source of
+            # truth for what's new — it compares against last_processed_entry_id,
+            # which is only advanced after a CTOP send actually succeeds. This
+            # in-memory tracker used to advance unconditionally at fetch time,
+            # so any entry whose CTOP send failed was marked "seen" here and
+            # silently never re-fetched again, permanently dropping it even
+            # though the scheduler correctly intended to retry it.
             if device_data:
-                filtered_data = self._filter_duplicate_entries(device_id_key, data)
+                filtered_data = data
             else:
                 filtered_data = self._filter_duplicate_entries(device_id_key, data)
                 self._log_fetch(device, url, response.status_code, filtered_data, None)

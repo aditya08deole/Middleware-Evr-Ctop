@@ -129,6 +129,23 @@ def add_device():
             except Exception as mqtt_err:
                 current_app.logger.warning(f"EMQX subscription failed for device {device_id}: {mqtt_err}")
 
+        # Trigger an immediate single pipeline run so status is set right away
+        # (success / inactive / error) instead of staying PENDING until the next
+        # 15-second scheduler tick.
+        try:
+            from utils.scheduler_firestore import process_device_safe
+            import threading
+            t = threading.Thread(
+                target=process_device_safe,
+                args=(device_id, full_device_data),
+                daemon=True,
+                name=f"initial-sync-{device_id}"
+            )
+            t.start()
+            current_app.logger.info(f"Initial sync triggered for new device {device_id}")
+        except Exception as sync_err:
+            current_app.logger.warning(f"Initial sync thread failed for device {device_id}: {sync_err}")
+
         # Log the creation
         firestore_service.create_log(LogModel(
             device_id=device_id,

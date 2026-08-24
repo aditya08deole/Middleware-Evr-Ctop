@@ -1,12 +1,22 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import json
+import threading
 from firebase.firestore_service import FirestoreService
 from services import ThingSpeakService, PreprocessService, CTOPService, EMQXService
 from config import Config
 import concurrent.futures
+
+# A device is considered INACTIVE if its latest data point is older than this
+STALENESS_THRESHOLD_MINUTES = 30
+
+# Per-device locks so an EMQX instant-trigger (fired the moment an MQTT message
+# arrives) can never run process_device() concurrently with the periodic
+# scheduled tick for the same device — both call process_device_safe().
+_device_locks = {}
+_device_locks_guard = threading.Lock()
 
 # Initialize scheduler
 scheduler = BackgroundScheduler()
@@ -69,11 +79,91 @@ def process_device(device_id, device_data):
             local_device_store.increment_device_stats(device_id, fetch_success=False, send_success=False)
             return
         
-        logger.info(f"Fetched data for device {device_data.get('name')}")
-        
-        # Step 2: Preprocess
+        # ── 30-MINUTE STALENESS GUARD ──────────────────────────────────────────
+        # Determine the timestamp of the latest data point from the feed.
+        # If it's older than STALENESS_THRESHOLD_MINUTES, mark the device INACTIVE
+        # and skip all further processing (no CTOP send for stale data).
+        feeds = raw_data.get('feeds', []) if raw_data else []
+        latest_reading_time = None
+        if feeds:
+            # ThingSpeak/EMQX feeds have a 'created_at' field (ISO 8601 UTC)
+            last_feed = feeds[-1]  # feeds are chronological, last is newest
+            ts_str = last_feed.get('created_at')
+            if ts_str:
+                try:
+                    latest_reading_time = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    latest_reading_time = None
+
+        now_utc = datetime.now(timezone.utc)
+        if latest_reading_time:
+            age_minutes = (now_utc - latest_reading_time).total_seconds() / 60
+            logger.info(f"Fetched fresh data for device {device_data.get('name')} (reading time: {latest_reading_time.isoformat()})")
+            if age_minutes > STALENESS_THRESHOLD_MINUTES:
+                logger.info(
+                    f"Device {device_data.get('name')} data is stale ({age_minutes:.1f} min old > {STALENESS_THRESHOLD_MINUTES} min). "
+                    f"Marking INACTIVE."
+                )
+                local_device_store.update_device_fields(device_id, {
+                    'last_status': 'inactive',
+                    'last_error': None,
+                    'last_reading_time': latest_reading_time.isoformat(),
+                    'last_sync_time': now_utc.isoformat()
+                })
+                return
+        else:
+            # No feed came back on THIS poll — this happens on nearly every tick
+            # for BOTH platforms once the current reading has already been seen:
+            #   - ThingSpeak: fetch_data() does not re-filter by entry_id anymore
+            #     (see thingspeak_service.py), so an empty response here means
+            #     ThingSpeak genuinely has zero feeds on the channel.
+            #   - EMQX: fetch_data() returns feeds=[] whenever no MQTT message
+            #     landed in the buffer since the last poll — normal, not stale.
+            # Fall back to the device's own last known reading time (persisted
+            # whenever we did see a fresh entry) and only mark INACTIVE if THAT
+            # is stale/missing.
+            stored_reading_time = device_data.get('last_reading_time')
+            stored_dt = None
+            if stored_reading_time:
+                try:
+                    stored_dt = datetime.fromisoformat(str(stored_reading_time).replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    stored_dt = None
+
+            if stored_dt is None:
+                logger.info(f"Device {device_data.get('name')} has no prior reading. Marking INACTIVE.")
+                local_device_store.update_device_fields(device_id, {
+                    'last_status': 'inactive',
+                    'last_error': None,
+                    'last_sync_time': now_utc.isoformat()
+                })
+                return
+
+            age_minutes = (now_utc - stored_dt).total_seconds() / 60
+            if age_minutes > STALENESS_THRESHOLD_MINUTES:
+                logger.info(
+                    f"Device {device_data.get('name')} last reading is stale "
+                    f"({age_minutes:.1f} min old > {STALENESS_THRESHOLD_MINUTES} min). Marking INACTIVE."
+                )
+                local_device_store.update_device_fields(device_id, {
+                    'last_status': 'inactive',
+                    'last_error': None,
+                    'last_sync_time': now_utc.isoformat()
+                })
+                return
+
+            # Still within the freshness window — just an idle poll tick, not stale.
+            logger.debug(f"Device {device_data.get('name')} idle this tick (last reading {age_minutes:.1f} min ago).")
+            local_device_store.update_device_fields(device_id, {
+                'last_status': 'success',
+                'last_sync_time': now_utc.isoformat()
+            })
+            return
+        # ── END STALENESS GUARD ────────────────────────────────────────────────
+
+        # Step 2: Preprocess (only reached for fresh data within 30 min)
         success, processed_data, error = preprocess_service.preprocess_data(device_id, raw_data, device_data=device_data)
-        
+
         if not success:
             logger.error(f"Failed to preprocess data for device {device_data.get('name')}: {error}")
             local_device_store.update_device_fields(device_id, {
@@ -83,16 +173,17 @@ def process_device(device_id, device_data):
             })
             local_device_store.increment_device_stats(device_id, fetch_success=True, send_success=False)
             return
-        
+
         if not processed_data:
-            # Idle interval (e.g., EMQX buffer had no new messages or no valid readings)
+            # Fresh data was fetched but preprocessing produced no entries
             logger.debug(f"No new entries to process for device {device_data.get('name')}")
             local_device_store.update_device_fields(device_id, {
                 'last_status': 'success',
+                'last_reading_time': latest_reading_time.isoformat() if latest_reading_time else None,
                 'last_sync_time': datetime.utcnow().isoformat()
             })
             return
-        
+
         # Step 3: Transform to CTOP format
         transformed_data = preprocess_service.transform_to_ctop_format(device_id, processed_data, device_data=device_data)
         
@@ -126,6 +217,7 @@ def process_device(device_id, device_data):
             logger.debug(f"No new data for device {device_id} (last entry: {last_entry_id})")
             local_device_store.update_device_fields(device_id, {
                 'last_status': 'success',
+                'last_reading_time': latest_reading_time.isoformat() if latest_reading_time else None,
                 'last_sync_time': datetime.utcnow().isoformat()
             })
             return
@@ -144,9 +236,12 @@ def process_device(device_id, device_data):
         
         logger.info(f"Sent {success_count}/{len(new_transformed_data)} NEW payloads to CTOP for device {device_data.get('name')}")
         
-        # Update local mirror (entry_id, status, sync_time)
+        # Update local mirror (entry_id, status, sync_time, reading_time)
         final_status = 'success' if success_count > 0 else 'error'
-        local_device_store.update_entry_id(device_id, latest_entry_id, last_status=final_status)
+        local_device_store.update_entry_id(
+            device_id, latest_entry_id, last_status=final_status,
+            last_reading_time=latest_reading_time.isoformat() if latest_reading_time else None
+        )
         
         # Increment stats locally
         local_device_store.increment_device_stats(device_id, fetch_success=True, send_success=success_count > 0)
@@ -170,6 +265,32 @@ def process_device(device_id, device_data):
         })
         local_device_store.increment_device_stats(device_id, fetch_success=False, send_success=False)
 
+def _get_device_lock(device_id):
+    key = str(device_id)
+    with _device_locks_guard:
+        lock = _device_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _device_locks[key] = lock
+        return lock
+
+def process_device_safe(device_id, device_data):
+    """
+    Run process_device() for a device, skipping the call entirely if that same
+    device is already being processed elsewhere (e.g. the periodic scheduled
+    tick and an EMQX instant on-message trigger landing at the same time).
+    Whatever run is already in-flight will pick up any newly buffered data,
+    so a skipped call here is never lost work.
+    """
+    lock = _get_device_lock(device_id)
+    if not lock.acquire(blocking=False):
+        logger.debug(f"Device {device_id} is already being processed — skipping concurrent trigger.")
+        return
+    try:
+        process_device(device_id, device_data)
+    finally:
+        lock.release()
+
 def scheduled_job():
     """The main job function that runs on schedule (Firestore version)"""
     try:
@@ -190,7 +311,7 @@ def scheduled_job():
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Create a dictionary of futures to device names for better error reporting
             future_to_device = {
-                executor.submit(process_device, device['id'], device): device.get('name', 'Unknown')
+                executor.submit(process_device_safe, device['id'], device): device.get('name', 'Unknown')
                 for device in devices
             }
             

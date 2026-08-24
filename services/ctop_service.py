@@ -131,12 +131,15 @@ class CTOPService:
                     'history': [r.status_code for r in response.history]
                 }
                 last_response_data = response_data
-                
-                # Log the attempt
-                self._log_send(device_id, url, response.status_code, str(payload), response.text, None, attempt + 1, device_name=device_name, device_type=device_type)
-                
+
                 # Only 2xx is considered success
-                if 200 <= response.status_code < 300:
+                is_success = 200 <= response.status_code < 300
+                log_error = None if is_success else f"HTTP {response.status_code}: {response.text}"
+
+                # Log the attempt (accurately, so a 4xx/5xx never reads as "Success")
+                self._log_send(device_id, url, response.status_code, str(payload), response.text, log_error, attempt + 1, device_name=device_name, device_type=device_type)
+
+                if is_success:
                     return True, response_data, None
                 else:
                     last_error = f"HTTP {response.status_code}: {response.text}"

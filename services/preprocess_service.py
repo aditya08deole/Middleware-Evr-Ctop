@@ -150,13 +150,13 @@ class PreprocessService:
             
             distance = self._safe_numeric(feed.get(device.distance_field))
             temperature = self._safe_numeric(feed.get(device.temperature_field))
-            
-            if distance is not None and temperature is not None:
-                distance_values.append(distance)
-                temp_values.append(temperature)
-                feed_entries.append(feed)
-        
-        if not distance_values and not temp_values:
+
+            # Default a missing/empty field to 0 instead of dropping the whole reading
+            distance_values.append(distance if distance is not None else 0)
+            temp_values.append(temperature if temperature is not None else 0)
+            feed_entries.append(feed)
+
+        if not feed_entries:
             return processed_entries
         
         # Apply filtering if configured
@@ -243,13 +243,13 @@ class PreprocessService:
             
             meter_reading = self._safe_numeric(feed.get(device.meter_reading_field))
             flow_rate = self._safe_numeric(feed.get(device.flow_rate_field))
-            
-            if meter_reading is not None and flow_rate is not None:
-                meter_values.append(meter_reading)
-                flow_rate_values.append(flow_rate)
-                feed_entries.append(feed)
-        
-        if not meter_values and not flow_rate_values:
+
+            # Default a missing/empty field to 0 instead of dropping the whole reading
+            meter_values.append(meter_reading if meter_reading is not None else 0)
+            flow_rate_values.append(flow_rate if flow_rate is not None else 0)
+            feed_entries.append(feed)
+
+        if not feed_entries:
             return processed_entries
         
         # Apply filtering if configured
@@ -325,13 +325,13 @@ class PreprocessService:
             
             flow_rate = self._safe_numeric(feed.get(device.flow_rate_field))
             liters = self._safe_numeric(feed.get(device.liters_field))
-            
-            if flow_rate is not None and liters is not None:
-                flow_rate_values.append(flow_rate)
-                liters_values.append(liters)
-                feed_entries.append(feed)
-        
-        if not flow_rate_values and not liters_values:
+
+            # Default a missing/empty field to 0 instead of dropping the whole reading
+            flow_rate_values.append(flow_rate if flow_rate is not None else 0)
+            liters_values.append(liters if liters is not None else 0)
+            feed_entries.append(feed)
+
+        if not feed_entries:
             return processed_entries
         
         # Apply filtering if configured
@@ -405,12 +405,12 @@ class PreprocessService:
                 continue
             
             distance = self._safe_numeric(feed.get(device.distance_field))
-            
-            if distance is not None:
-                distance_values.append(distance)
-                feed_entries.append(feed)
-        
-        if not distance_values:
+
+            # Default a missing/empty field to 0 instead of dropping the whole reading
+            distance_values.append(distance if distance is not None else 0)
+            feed_entries.append(feed)
+
+        if not feed_entries:
             return processed_entries
         
         # Apply filtering if configured
@@ -472,13 +472,13 @@ class PreprocessService:
             
             temperature = self._safe_numeric(feed.get(device.temperature_field))
             tds = self._safe_numeric(feed.get(device.tds_field))
-            
-            if temperature is not None and tds is not None:
-                temperature_values.append(temperature)
-                tds_values.append(tds)
-                feed_entries.append(feed)
-        
-        if not temperature_values and not tds_values:
+
+            # Default a missing/empty field to 0 instead of dropping the whole reading
+            temperature_values.append(temperature if temperature is not None else 0)
+            tds_values.append(tds if tds is not None else 0)
+            feed_entries.append(feed)
+
+        if not feed_entries:
             return processed_entries
         
         # Apply filtering if configured

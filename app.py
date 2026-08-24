@@ -63,20 +63,26 @@ def create_app(config_name='default'):
     app.register_blueprint(analytics_bp)
     app.register_blueprint(settings_bp)
     
-    # Initialize scheduler only in the main process (prevent double-run in debug mode)
-    if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
-        # 1. Start the Background Scheduler (IoT Pipeline + Hourly Sync)
-        init_scheduler(app)
-        
-        # 2. PERFORM STARTUP SYNC: Pull master data from Firebase into Local Mirror
-        from utils.local_device_store import local_device_store
-        logger = app.logger
-        logger.info("Performing startup sync from Firebase...")
-        local_device_store.sync_from_firebase()
-        
-        # 3. Ensure device cache is warmed up
-        from utils.device_cache import device_cache
-        device_cache.get_devices()
+    # Initialize the scheduler for this process. This app runs a live
+    # BackgroundScheduler and persistent EMQX MQTT clients, so app.run() below
+    # is called with use_reloader=False — there is only ever one process, so
+    # no reloader-related dedup guard is needed here.
+    #
+    # NOTE: in production this module is imported once per Gunicorn worker.
+    # If multiple workers are configured, each one starts its own scheduler
+    # against the same local SQLite mirror — that's a pre-existing condition,
+    # not addressed here.
+    init_scheduler(app)
+
+    # 2. PERFORM STARTUP SYNC: Pull master data from Firebase into Local Mirror
+    from utils.local_device_store import local_device_store
+    logger = app.logger
+    logger.info("Performing startup sync from Firebase...")
+    local_device_store.sync_from_firebase()
+
+    # 3. Ensure device cache is warmed up
+    from utils.device_cache import device_cache
+    device_cache.get_devices()
     
     # Routes
     @app.route('/')
@@ -286,4 +292,9 @@ if __name__ == '__main__':
     
     # Use 127.0.0.1 for development, 0.0.0.0 for production
     host = '0.0.0.0' if is_production else '127.0.0.1'
-    app.run(host=host, port=8080, debug=debug_mode)
+    # use_reloader=False: this process owns a live BackgroundScheduler and
+    # persistent EMQX MQTT clients. Werkzeug's auto-reloader spawning extra
+    # processes means multiple schedulers race on the same SQLite mirror and
+    # the same MQTT client_id at once. debug=True still gives the interactive
+    # debugger; it just won't auto-restart the process anymore.
+    app.run(host=host, port=8080, debug=debug_mode, use_reloader=False)

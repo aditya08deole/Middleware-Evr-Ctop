@@ -37,6 +37,7 @@ ALLOWED_DEVICE_UPDATE_FIELDS = {
     'flow_rate_field', 'liters_field', 'tds_field', 'filtering_method',
     'filter_window', 'last_status', 'last_error', 'last_sync_time',
     'last_processed_entry_id',  # Fix #9: was missing, caused silent data loss
+    'last_reading_time',        # Timestamp of the latest sensor data point
     'data_source', 'emqx_broker_url', 'emqx_port', 'emqx_username',
     'emqx_password', 'emqx_topic', 'emqx_use_tls'
 }
@@ -343,14 +344,16 @@ class LocalDeviceStore:
         with self._lock:
             return self._devices.get(str(device_id))
 
-    def update_entry_id(self, device_id: str, entry_id: str, last_status: str = 'success') -> bool:
+    def update_entry_id(self, device_id: str, entry_id: str, last_status: str = 'success', last_reading_time: Optional[str] = None) -> bool:
         did = str(device_id)
         with self._lock:
             if did in self._devices:
                 self._devices[did]['last_processed_entry_id'] = str(entry_id)
                 self._devices[did]['last_status'] = last_status
-                if last_status == 'success':
+                if last_status in ('success', 'inactive'):
                     self._devices[did]['last_error'] = None
+                if last_reading_time is not None:
+                    self._devices[did]['last_reading_time'] = last_reading_time
                 self._devices[did]['last_sync_time'] = datetime.now(timezone.utc).isoformat()
                 self._dirty_devices.add(did)
                 return True
@@ -375,7 +378,7 @@ class LocalDeviceStore:
                 for k, v in updates.items():
                     if k in ALLOWED_DEVICE_UPDATE_FIELDS:
                         self._devices[did][k] = v
-                if updates.get('last_status') == 'success' and 'last_error' not in updates:
+                if updates.get('last_status') in ('success', 'inactive') and 'last_error' not in updates:
                     self._devices[did]['last_error'] = None
                 self._dirty_devices.add(did)
                 return True
