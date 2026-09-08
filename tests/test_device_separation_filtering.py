@@ -156,7 +156,10 @@ class TestDeviceSeparation:
             assert success_valve is True
 
             # Verify correct field interpretation per device
-            assert processed_tank[0]['Level'] == pytest.approx(54.5)
+            # Level reflects temperature-compensated distance (28°C, not the
+            # reference 25°C), so it's 100 - compensated(45.5, 28) ≈ 54.26,
+            # not a plain 100 - 45.5 = 54.5 subtraction.
+            assert processed_tank[0]['Level'] == pytest.approx(54.26, abs=0.01)
             assert processed_valve[0]['FlowRate'] == pytest.approx(0.85)
             assert processed_valve[0]['Liters'] == pytest.approx(850)
 
@@ -175,13 +178,17 @@ class TestFilteringAlgorithms:
 
             filtered = service._apply_median_filter(values, window)
 
+            # _apply_median_filter uses a centered window (±window//2 around
+            # each index, clamped to the array bounds), not a causal/trailing
+            # one — this matches the already-validated behavior in
+            # test_preprocess_partial_fields.py::test_filters_with_none.
             assert len(filtered) == 5
-            # First value: median of [10] = 10
-            assert filtered[0] == 10.0
-            # Second value: median of [10, 20] = 15
-            assert filtered[1] == 15.0
-            # Third value: median of [10, 20, 30] = 20
-            assert filtered[2] == 20.0
+            # First value: window is [10, 20, 30] (clamped at the left edge) -> median 20
+            assert filtered[0] == 20.0
+            # Second value: window is [10, 20, 30, 40] -> median (20+30)/2 = 25
+            assert filtered[1] == 25.0
+            # Third value: window is the full [10, 20, 30, 40, 50] -> median 30
+            assert filtered[2] == 30.0
 
     def test_median_filter_removes_spikes(self, app, db_session):
         """Test that median filter removes spikes correctly"""
@@ -208,11 +215,12 @@ class TestFilteringAlgorithms:
 
             filtered = service._apply_average_filter(values, window)
 
+            # Same centered-window semantics as the median filter above.
             assert len(filtered) == 5
-            # First value: avg of [10] = 10
-            assert filtered[0] == 10.0
-            # Third value: avg of [10, 20, 30] = 20
-            assert filtered[2] == 20.0
+            # First value: window is [10, 20, 30] -> avg 20
+            assert filtered[0] == 20.0
+            # Third value: window is the full [10, 20, 30, 40, 50] -> avg 30
+            assert filtered[2] == 30.0
 
     def test_window_size_impact(self, app, db_session):
         """Test that window size affects filtering output"""
@@ -227,8 +235,12 @@ class TestFilteringAlgorithms:
 
             # Large window (5) - more smoothing
             filtered_w5 = service._apply_median_filter(values, 5)
-            # Should be smoother than original
-            assert filtered_w5[2] == 30.0  # Middle value averaged
+            # Full-array window at index 2: sorted([10,50,10,50,10]) has
+            # median 10 (three 10s outnumber two 50s) — still meaningfully
+            # different from the unfiltered value only where a spike sits
+            # alone; the point of this test is filtered_w1 != filtered_w5.
+            assert filtered_w5[2] == 10.0
+            assert filtered_w1 != filtered_w5
 
     def test_filtering_maintains_length(self, app, db_session):
         """Test that filtering maintains list length"""
@@ -250,32 +262,16 @@ class TestDuplicateDetection:
     def test_duplicate_entry_filtered(self, app, db_session):
         """Test that already-processed entries are filtered out"""
         with app.app_context():
-            device = Device(
-                id=1,
-                name='Test Device',
-                device_type='EvaraTank',
-                channel_id='111',
-                api_key='key',
-                ctop_url_1='https://ctop.com/api',
-                auth_token='token',
-                tank_height=100,
-                distance_field='field1',
-                temperature_field='field2',
-                is_active=True
-            )
-            db.session.add(device)
-            db.session.commit()
-
-            # Create a previously processed entry
-            prev_processed = ProcessedData(
-                device_id=1,
-                thingspeak_entry_id='12345',
-                processing_status='processed'
-            )
-            db.session.add(prev_processed)
-            db.session.commit()
-
+            # _filter_duplicate_entries tracks "already seen" entry_ids
+            # in-memory on the ThingSpeakService instance itself
+            # (self.device_last_entry_id), not by querying the ProcessedData
+            # table — see the comment in thingspeak_service.py:fetch_data
+            # explaining why the DB-backed approach was replaced (a failed
+            # CTOP send would otherwise get marked "seen" and never retried).
+            # Simulate "already processed up to 12345" the way the real code
+            # actually tracks it.
             service = ThingSpeakService()
+            service.device_last_entry_id['1'] = '12345'
 
             # Try to fetch same entry again
             raw_data = {

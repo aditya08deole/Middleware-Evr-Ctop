@@ -2,29 +2,46 @@ import requests
 import json
 import time
 from datetime import datetime
+from urllib3.util.retry import Retry
 from models import db, Device, Log, ProcessedData
 from config import Config
 import os
 
 class CTOPService:
     """Service for sending data to CTOP API endpoints"""
-    
+
     def __init__(self):
         self.timeout = Config.CTOP_TIMEOUT
         self.max_retries = Config.CTOP_MAX_RETRIES
         self.retry_delay = Config.CTOP_RETRY_DELAY
         self.use_firebase = os.environ.get('USE_FIREBASE', 'false').lower() == 'true'
-        
+
         if self.use_firebase:
             from utils.encryption import get_encryption_service
             self.encryption_service = get_encryption_service()
-            
+
         # Phase 2 Optimization: Persistent HTTP Session for connection pooling
         self.session = requests.Session()
+        # Transport-level retry: a pooled keep-alive connection can be closed
+        # server-side between scheduler ticks (every 15s) and the next reuse
+        # fails with ConnectionResetError/RemoteDisconnected. This makes
+        # urllib3 transparently evict the dead connection and retry with a
+        # fresh one *inside* a single session.post() call. status=0 means it
+        # never retries based on HTTP status code — that decision (4xx vs
+        # 5xx) is made explicitly in _send_with_retry below, with logging.
+        connection_retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            redirect=0,
+            status=0,
+            backoff_factor=0.2,
+        )
         # Increase pool size to handle parallel requests from scheduler
         adapter = requests.adapters.HTTPAdapter(
-            pool_connections=20, 
-            pool_maxsize=Config.SCHEDULER_MAX_WORKERS
+            pool_connections=20,
+            pool_maxsize=Config.SCHEDULER_MAX_WORKERS,
+            max_retries=connection_retry
         )
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
@@ -113,7 +130,7 @@ class CTOPService:
         """
         last_error = None
         last_response_data = None
-        
+
         for attempt in range(self.max_retries):
             try:
                 # Use allow_redirects=True to handle 3xx
@@ -124,7 +141,7 @@ class CTOPService:
                     timeout=self.timeout,
                     allow_redirects=True
                 )
-                
+
                 response_data = {
                     'status_code': response.status_code,
                     'body': response.text,
@@ -141,24 +158,32 @@ class CTOPService:
 
                 if is_success:
                     return True, response_data, None
-                else:
-                    last_error = f"HTTP {response.status_code}: {response.text}"
-                    
+
+                last_error = f"HTTP {response.status_code}: {response.text}"
+
+                # A 4xx (other than 429, which means "rate limited, slow down
+                # and try again") is a permanent failure for this request —
+                # e.g. a 404 "node token not found" will not start succeeding
+                # by resending the identical payload a moment later. Stop
+                # burning attempts and wall-clock time on it.
+                if 400 <= response.status_code < 500 and response.status_code != 429:
+                    return False, last_response_data, last_error
+
             except requests.exceptions.Timeout:
                 last_error = "Request timeout"
                 self._log_send(device_id, url, None, str(payload), None, last_error, attempt + 1, "Timeout", device_name=device_name, device_type=device_type)
-                
+
             except requests.exceptions.ConnectionError:
                 last_error = "Connection error"
                 self._log_send(device_id, url, None, str(payload), None, last_error, attempt + 1, "ConnectionError", device_name=device_name, device_type=device_type)
-                
+
             except requests.exceptions.RequestException as e:
                 last_error = f"Request error: {str(e)}"
                 self._log_send(device_id, url, None, str(payload), None, last_error, attempt + 1, "RequestException", device_name=device_name, device_type=device_type)
-            
+
             if attempt < self.max_retries - 1:
                 time.sleep(self.retry_delay)
-        
+
         return False, last_response_data, last_error
     
     def _log_send(self, device_id, endpoint, response_code, request_payload, response_body, error_message, attempt, error_type=None, device_name=None, device_type=None):
@@ -177,7 +202,8 @@ class CTOPService:
             payload=request_payload,
             error_message=error_message,
             device_name=device_name,
-            device_type=device_type
+            device_type=device_type,
+            attempt=attempt
         )
         
         if error_message is None:

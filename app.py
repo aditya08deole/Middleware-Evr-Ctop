@@ -158,19 +158,24 @@ def create_app(config_name='default'):
         logs = memory_logger.get_logs(limit=limit, device_id=device_id)
         # Get real-time stats from the logger
         log_stats = memory_logger.get_stats()
-        
-        # Get device stats from cache
-        active_devices = device_cache.get_devices()
-        
+
+        # Get device stats from cache. active_only=False so a device the
+        # user disabled via the dashboard's Toggle button still shows up
+        # (as disabled) instead of silently disappearing — with the default
+        # active_only=True this list was already pre-filtered to is_active,
+        # which made "active_devices" always equal "total_devices" below by
+        # construction, and made the disabled-device count unrecoverable.
+        all_devices = device_cache.get_devices(active_only=False)
+
         return jsonify({
             'success': True,
             'data': logs,
             'stats': {
                 'total_logs': log_stats['total_logs'],
                 'error_logs': log_stats['error_logs'],
-                'total_devices': len(active_devices),
-                'active_devices': sum(1 for d in active_devices if d.get('is_active', True)),
-                'active_devices_list': active_devices
+                'total_devices': len(all_devices),
+                'active_devices': sum(1 for d in all_devices if d.get('is_active', True)),
+                'active_devices_list': all_devices
             }
         })
 

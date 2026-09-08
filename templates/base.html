@@ -112,16 +112,27 @@
             if (el) el.style.display = 'none';
         }
         
+        // Single global showAlert — this used to be redefined independently
+        // in device_detail.html, settings.html, and multi-step-form.js
+        // (identically, as a fixed top-right toast); whichever script tag
+        // happened to load last silently won, so which style actually
+        // rendered depended on page. Consolidated here as the one version.
         function showAlert(message, type = 'info') {
             const alertDiv = document.createElement('div');
             alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.style.position = 'fixed';
+            alertDiv.style.top = '20px';
+            alertDiv.style.right = '20px';
+            alertDiv.style.zIndex = '9999';
+            const safeMessage = String(message ?? '').replace(/[&<>"']/g, (ch) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[ch]));
             alertDiv.innerHTML = `
-                ${message}
+                ${safeMessage}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             `;
-            const container = document.querySelector('.container');
-            if (container) container.insertBefore(alertDiv, container.firstChild);
-            
+            document.body.appendChild(alertDiv);
+
             setTimeout(() => {
                 alertDiv.remove();
             }, 5000);

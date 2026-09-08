@@ -151,14 +151,20 @@ class PreprocessService:
             distance = self._safe_numeric(feed.get(device.distance_field))
             temperature = self._safe_numeric(feed.get(device.temperature_field))
 
-            # Default a missing/empty field to 0 instead of dropping the whole reading
-            distance_values.append(distance if distance is not None else 0)
-            temp_values.append(temperature if temperature is not None else 0)
+            # Keep genuinely missing fields as None (not 0) — the filter
+            # functions below already handle None correctly (skip it from
+            # window math, propagate it through when nothing else in the
+            # window is present), and downstream code decides per-field
+            # whether to include Level/Temperature based on `is not None`.
+            # Defaulting to 0 here previously made a missing temperature
+            # look "present at 0°C" and triggered bogus compensation.
+            distance_values.append(distance)
+            temp_values.append(temperature)
             feed_entries.append(feed)
 
         if not feed_entries:
             return processed_entries
-        
+
         # Apply filtering if configured
         if device.filtering_method == 'median':
             window = min(device.filter_window or 5, len(distance_values))
@@ -171,20 +177,24 @@ class PreprocessService:
         else:
             filtered_distances = distance_values
             filtered_temps = temp_values
-        
+
         # Process each feed with filtered values
         for i, feed in enumerate(feed_entries):
             if i >= len(filtered_distances) or i >= len(filtered_temps):
                 continue
-            
+
             dist_val = filtered_distances[i]
             temp_val = filtered_temps[i]
-            
+
+            # Nothing usable reported this tick — don't emit an empty payload
+            if dist_val is None and temp_val is None:
+                continue
+
             processed = {
                 'LCT': self._parse_timestamp(feed.get('created_at')) if feed.get('created_at') else None,
                 'entry_id': feed.get('entry_id')
             }
-            
+
             # Level computation requires distance
             if dist_val is not None:
                 if temp_val is not None:
@@ -244,9 +254,9 @@ class PreprocessService:
             meter_reading = self._safe_numeric(feed.get(device.meter_reading_field))
             flow_rate = self._safe_numeric(feed.get(device.flow_rate_field))
 
-            # Default a missing/empty field to 0 instead of dropping the whole reading
-            meter_values.append(meter_reading if meter_reading is not None else 0)
-            flow_rate_values.append(flow_rate if flow_rate is not None else 0)
+            # Keep missing fields as None — see _preprocess_evaratank for why.
+            meter_values.append(meter_reading)
+            flow_rate_values.append(flow_rate)
             feed_entries.append(feed)
 
         if not feed_entries:
@@ -272,31 +282,38 @@ class PreprocessService:
             
             meter_val = filtered_meters[i]
             flow_val = filtered_flows[i]
-            
+
+            # Nothing usable reported this tick — don't emit a fabricated
+            # zero-consumption reading (was: {'MeterReading': None-omitted,
+            # 'FlowRate': 0.0} sent to CTOP as if it were a real reading).
+            if meter_val is None and flow_val is None:
+                continue
+
             processed = {
                 'LCT': self._parse_timestamp(feed.get('created_at')) if feed.get('created_at') else None,
                 'entry_id': feed.get('entry_id')
             }
-            
+
             if meter_val is not None:
                 processed['MeterReading'] = round(meter_val, 2)
-            
-            # Send 0 for flow rate if not received
+
+            # Send 0 for flow rate if not received (but meter WAS received —
+            # the both-missing case is already skipped above)
             if flow_val is not None:
                 processed['FlowRate'] = round(flow_val, 2)
             else:
                 processed['FlowRate'] = 0.0
-            
+
             # Add location if available
             if device.latitude is not None:
                 processed['Latitude'] = device.latitude
             if device.longitude is not None:
                 processed['Longitude'] = device.longitude
-            
+
             processed_entries.append(processed)
-        
+
         return processed_entries
-    
+
     def _preprocess_evaravalve(self, device, feeds):
         """
         Preprocess EvaraValve specific data with flow rate and liters
@@ -326,9 +343,9 @@ class PreprocessService:
             flow_rate = self._safe_numeric(feed.get(device.flow_rate_field))
             liters = self._safe_numeric(feed.get(device.liters_field))
 
-            # Default a missing/empty field to 0 instead of dropping the whole reading
-            flow_rate_values.append(flow_rate if flow_rate is not None else 0)
-            liters_values.append(liters if liters is not None else 0)
+            # Keep missing fields as None — see _preprocess_evaratank for why.
+            flow_rate_values.append(flow_rate)
+            liters_values.append(liters)
             feed_entries.append(feed)
 
         if not feed_entries:
@@ -354,18 +371,23 @@ class PreprocessService:
             
             flow_val = filtered_flow_rates[i]
             liters_val = filtered_liters[i]
-            
+
+            # Nothing usable reported this tick — don't emit a fabricated reading
+            if flow_val is None and liters_val is None:
+                continue
+
             processed = {
                 'LCT': self._parse_timestamp(feed.get('created_at')) if feed.get('created_at') else None,
                 'entry_id': feed.get('entry_id')
             }
-            
-            # Send 0 for flow rate if not received
+
+            # Send 0 for flow rate if not received (liters WAS received —
+            # the both-missing case is already skipped above)
             if flow_val is not None:
                 processed['FlowRate'] = round(flow_val, 2)
             else:
                 processed['FlowRate'] = 0.0
-                
+
             if liters_val is not None:
                 processed['Liters'] = round(liters_val, 2)
             
@@ -406,8 +428,8 @@ class PreprocessService:
             
             distance = self._safe_numeric(feed.get(device.distance_field))
 
-            # Default a missing/empty field to 0 instead of dropping the whole reading
-            distance_values.append(distance if distance is not None else 0)
+            # Keep missing distance as None — see _preprocess_evaratank for why.
+            distance_values.append(distance)
             feed_entries.append(feed)
 
         if not feed_entries:
@@ -427,7 +449,11 @@ class PreprocessService:
         for i, feed in enumerate(feed_entries):
             if i >= len(filtered_distances):
                 continue
-            
+
+            # Nothing usable reported this tick — don't emit a fabricated reading
+            if filtered_distances[i] is None:
+                continue
+
             processed = {
                 'Distance': round(filtered_distances[i], 2),  # Distance in cm (raw, no subtraction)
                 'LCT': self._parse_timestamp(feed.get('created_at')) if feed.get('created_at') else None,
@@ -473,9 +499,9 @@ class PreprocessService:
             temperature = self._safe_numeric(feed.get(device.temperature_field))
             tds = self._safe_numeric(feed.get(device.tds_field))
 
-            # Default a missing/empty field to 0 instead of dropping the whole reading
-            temperature_values.append(temperature if temperature is not None else 0)
-            tds_values.append(tds if tds is not None else 0)
+            # Keep missing fields as None — see _preprocess_evaratank for why.
+            temperature_values.append(temperature)
+            tds_values.append(tds)
             feed_entries.append(feed)
 
         if not feed_entries:
@@ -501,12 +527,16 @@ class PreprocessService:
             
             temp_val = filtered_temperatures[i]
             tds_val = filtered_tds[i]
-            
+
+            # Nothing usable reported this tick — don't emit a fabricated reading
+            if temp_val is None and tds_val is None:
+                continue
+
             processed = {
                 'LCT': self._parse_timestamp(feed.get('created_at')) if feed.get('created_at') else None,
                 'entry_id': feed.get('entry_id')
             }
-            
+
             if temp_val is not None:
                 processed['Temperature'] = round(temp_val, 2)
             if tds_val is not None:

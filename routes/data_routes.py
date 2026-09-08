@@ -1,6 +1,8 @@
 from flask import Blueprint, jsonify
 from models import db, Log, ProcessedData
 from services import ThingSpeakService, PreprocessService, CTOPService
+import concurrent.futures
+from config import Config
 
 data_bp = Blueprint('data', __name__, url_prefix='/data')
 
@@ -22,23 +24,32 @@ def fetch_all_devices():
             fs = FirestoreService()
             devices = fs.list_devices(filters={'is_active': True}, limit=1000)
 
-            results = {}
-            for device in devices:
+            def _sync_one(device):
                 device_id = device.get('id')
                 try:
                     success, error, ctop_results = _sync_device_data(device_id, device)
-                    results[device_id] = {
+                    return device_id, {
                         'success': success,
                         'error': error,
                         'device_name': device.get('name'),
                         'ctop_results': ctop_results
                     }
                 except Exception as e:
-                    results[device_id] = {
+                    return device_id, {
                         'success': False,
                         'error': str(e),
                         'device_name': device.get('name')
                     }
+
+            # Same parallel-fan-out pattern as the periodic scheduler
+            # (utils/scheduler_firestore.py) — this endpoint used to fetch
+            # devices one at a time, taking roughly N x per-device latency
+            # for N devices instead of running them concurrently.
+            results = {}
+            max_workers = getattr(Config, 'SCHEDULER_MAX_WORKERS', 20)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                for device_id, result in executor.map(_sync_one, devices):
+                    results[device_id] = result
         else:
             from models import Device
             devices = Device.query.filter_by(is_active=True).all()

@@ -1,12 +1,17 @@
 import requests
 import json
+import time
 from datetime import datetime
+from urllib3.util.retry import Retry
 from models import db, Device, Log, ProcessedData
 from config import Config
 import os
 
 class ThingSpeakService:
     """Service for fetching data from ThingSpeak API"""
+
+    FETCH_MAX_ATTEMPTS = 2
+    FETCH_RETRY_DELAY = 1  # seconds
 
     def __init__(self):
         self.base_url = Config.THINGSPEAK_BASE_URL
@@ -19,10 +24,22 @@ class ThingSpeakService:
 
         # Phase 2 Optimization: Persistent HTTP Session for connection pooling
         self.session = requests.Session()
+        # Transport-level retry: evict a pooled keep-alive connection the
+        # server already closed (same fix as ctop_service.py) instead of
+        # failing outright on the first reused-but-dead connection.
+        connection_retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            redirect=0,
+            status=0,
+            backoff_factor=0.2,
+        )
         # Increase pool size to handle parallel requests from scheduler
         adapter = requests.adapters.HTTPAdapter(
             pool_connections=20,
-            pool_maxsize=Config.SCHEDULER_MAX_WORKERS
+            pool_maxsize=Config.SCHEDULER_MAX_WORKERS,
+            max_retries=connection_retry
         )
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
@@ -70,36 +87,49 @@ class ThingSpeakService:
             'results': 1  # only fetch the latest 1 entry to prevent CTOP burst
         }
 
-        try:
-            # Use self.session instead of requests directly
-            response = self.session.get(url, params=params, timeout=self.timeout)
-            response.raise_for_status()
+        # App-level retry, mirroring ctop_service.py's send-side resilience:
+        # a transient DNS blip or read-timeout shouldn't fail the whole tick
+        # for this device when a second attempt a moment later would work.
+        last_error = None
+        for attempt in range(self.FETCH_MAX_ATTEMPTS):
+            try:
+                response = self.session.get(url, params=params, timeout=self.timeout)
+                response.raise_for_status()
 
-            data = response.json()
+                data = response.json()
 
-            # DUPLICATE DETECTION:
-            # In Firestore mode, do NOT filter here. The scheduler's own dedup
-            # (utils/scheduler_firestore.py, Step 4) is the single source of
-            # truth for what's new — it compares against last_processed_entry_id,
-            # which is only advanced after a CTOP send actually succeeds. This
-            # in-memory tracker used to advance unconditionally at fetch time,
-            # so any entry whose CTOP send failed was marked "seen" here and
-            # silently never re-fetched again, permanently dropping it even
-            # though the scheduler correctly intended to retry it.
-            if device_data:
-                filtered_data = data
-            else:
-                filtered_data = self._filter_duplicate_entries(device_id_key, data)
-                self._log_fetch(device, url, response.status_code, filtered_data, None)
+                # DUPLICATE DETECTION:
+                # In Firestore mode, do NOT filter here. The scheduler's own dedup
+                # (utils/scheduler_firestore.py, Step 4) is the single source of
+                # truth for what's new — it compares against last_processed_entry_id,
+                # which is only advanced after a CTOP send actually succeeds. This
+                # in-memory tracker used to advance unconditionally at fetch time,
+                # so any entry whose CTOP send failed was marked "seen" here and
+                # silently never re-fetched again, permanently dropping it even
+                # though the scheduler correctly intended to retry it.
+                if device_data:
+                    filtered_data = data
+                else:
+                    filtered_data = self._filter_duplicate_entries(device_id_key, data)
+                    self._log_fetch(device, url, response.status_code, filtered_data, None)
 
-            return True, filtered_data, None
+                return True, filtered_data, None
 
-        except requests.exceptions.RequestException as e:
-            error_msg = str(e)
-            status_code = getattr(getattr(e, 'response', None), 'status_code', None)
-            if not device_data:
-                self._log_fetch(device, url, status_code, None, error_msg, type(e).__name__)
-            return False, None, error_msg
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                status_code = getattr(getattr(e, 'response', None), 'status_code', None)
+                if not device_data:
+                    self._log_fetch(device, url, status_code, None, last_error, type(e).__name__)
+
+                # A 4xx from ThingSpeak (bad channel/API key) won't fix itself
+                # by retrying the identical request — stop immediately.
+                if status_code is not None and 400 <= status_code < 500:
+                    return False, None, last_error
+
+                if attempt < self.FETCH_MAX_ATTEMPTS - 1:
+                    time.sleep(self.FETCH_RETRY_DELAY)
+
+        return False, None, last_error
     
     def _log_fetch(self, device, endpoint, response_code, response_data, error_message, error_type=None):
         """Log ThingSpeak fetch attempt locally"""

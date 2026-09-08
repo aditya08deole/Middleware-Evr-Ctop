@@ -11,8 +11,10 @@ Verifies:
 
 import unittest
 import os
+import shutil
 import sqlite3
 import json
+import tempfile
 import threading
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
@@ -29,17 +31,35 @@ from utils.local_device_store import (
 
 class TestLocalDeviceStoreSQLite(unittest.TestCase):
     def setUp(self):
-        """Reset the singleton state for each test"""
+        """Reset the singleton state for each test, and redirect its disk
+        persistence to a throwaway temp file for the duration of the test.
+
+        This uses the same real singleton object the app uses (rather than
+        constructing a separate instance) so ALLOWED_DEVICE_UPDATE_FIELDS,
+        locking, etc. are exercised exactly as in production — but every
+        add_device()/flush() call in these tests used to write straight into
+        the real instance/device_mirror.db on disk, permanently leaving
+        fixture rows like 'test_1', 'valid_1', 'stats_1' mixed into
+        production device data on every test run. Pointing _db_path at a
+        temp file for the test's lifetime keeps all of that off the real file.
+        """
         self.store = local_device_store
+        self._real_db_path = self.store._db_path
+        self._temp_dir = tempfile.mkdtemp()
+        self.store._db_path = os.path.join(self._temp_dir, 'test_device_mirror.db')
+        self.store._init_db()
+
         with self.store._lock:
             self.store._devices = {}
             self.store._stats = {}
             self.store._dirty_devices.clear()
             self.store._dirty_meta = True
-            # We don't want to mess with the real production DB if possible
-            # But the singleton is already initialized with the real path.
-            # For unit tests, we'll just clear the memory state.
-            
+
+    def tearDown(self):
+        """Restore the real db_path and discard the temp file."""
+        self.store._db_path = self._real_db_path
+        shutil.rmtree(self._temp_dir, ignore_errors=True)
+
     def test_add_and_get_device(self):
         """Verify device addition and retrieval"""
         device = {

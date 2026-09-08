@@ -59,7 +59,16 @@ function hideLoadingSkeleton(element, content) {
 // Show spinner on button
 function showButtonSpinner(button, originalText = 'Loading...') {
     if (!button) return;
-    
+
+    // A button can be armed twice for one submit (e.g. a page-wide generic
+    // form listener plus a form's own submit handler both call this) —
+    // without this guard, the second call captures the *spinner's own*
+    // "Loading..." text as "original", so hideButtonSpinner later restores
+    // the wrong label instead of the button's real text.
+    if (button.disabled && button.dataset.originalText) {
+        return;
+    }
+
     button.disabled = true;
     button.dataset.originalText = button.textContent;
     button.innerHTML = `
@@ -71,9 +80,10 @@ function showButtonSpinner(button, originalText = 'Loading...') {
 // Hide spinner on button
 function hideButtonSpinner(button) {
     if (!button) return;
-    
+
     button.disabled = false;
     button.textContent = button.dataset.originalText || 'Submit';
+    delete button.dataset.originalText;
 }
 
 // Show page loading overlay

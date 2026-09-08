@@ -13,9 +13,9 @@
                 <div class="card-body">
                     <!-- Progress Bar -->
                     <div class="progress mb-4" style="height: 6px;">
-                        <div class="progress-bar" id="form-progress" role="progressbar" style="width: 25%" aria-valuenow="1" aria-valuemin="1" aria-valuemax="4"></div>
+                        <div class="progress-bar" id="form-progress" role="progressbar" style="width: 20%" aria-valuenow="1" aria-valuemin="1" aria-valuemax="5"></div>
                     </div>
-                    
+
                     <!-- Step Indicators -->
                     <div class="step-indicators mb-4">
                         <div class="step-indicator active" data-step="1">
@@ -24,14 +24,18 @@
                         </div>
                         <div class="step-indicator" data-step="2">
                             <div class="step-number">2</div>
-                            <div class="step-label">CTOP Config</div>
+                            <div class="step-label">Device Type</div>
                         </div>
                         <div class="step-indicator" data-step="3">
                             <div class="step-number">3</div>
-                            <div class="step-label">Metadata</div>
+                            <div class="step-label">CTOP Config</div>
                         </div>
                         <div class="step-indicator" data-step="4">
                             <div class="step-number">4</div>
+                            <div class="step-label">Metadata</div>
+                        </div>
+                        <div class="step-indicator" data-step="5">
+                            <div class="step-number">5</div>
                             <div class="step-label">Review</div>
                         </div>
                     </div>
@@ -132,9 +136,207 @@
                             </div>
                         </div>
                         
-                        <!-- Step 2: CTOP Configuration -->
-                        <div class="form-step" id="step-2">
-                            <h5 class="mb-3">Step 2: CTOP Configuration</h5>
+                        <!-- Step 2: Device Type & Sensor Configuration -->
+                        <div class="form-step" id="step-2" style="display: none;">
+                            <h5 class="mb-3">Step 2: Device Type &amp; Sensor Configuration</h5>
+                            <div class="mb-3">
+                                <label for="device-type" class="form-label">Device Type *</label>
+                                <select class="form-select" id="device-type" name="device_type" required>
+                                    <option value="" disabled selected>Select device type...</option>
+                                    <option value="EvaraTank">EvaraTank</option>
+                                    <option value="EvaraFlow">EvaraFlow</option>
+                                    <option value="EvaraDeep">EvaraDeep</option>
+                                    <option value="EvaraTDS">EvaraTDS</option>
+                                    <option value="EvaraValve">EvaraValve</option>
+                                </select>
+                                <div class="form-text">Determines which sensor fields CTOP expects from this device</div>
+                                <div data-error="device_type"></div>
+                            </div>
+
+                            <!-- EvaraTank Specific Fields -->
+                            <div id="evaratank-fields" class="device-specific-fields" style="display: none;">
+                                <h6 class="mb-3 mt-3"><i class="bi bi-gear"></i> EvaraTank Configuration</h6>
+                                <div class="mb-3">
+                                    <label for="tank-height" class="form-label">Tank Height (cm) *</label>
+                                    <input type="number" step="any" class="form-control" id="tank-height" name="tank_height">
+                                    <div class="form-text">Total height of the tank in centimeters</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="distance-field" class="form-label">Distance Field *</label>
+                                        <select class="form-select field-select" id="distance-field" name="distance_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing distance data</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="temperature-field" class="form-label">Temperature Field *</label>
+                                        <select class="form-select field-select" id="temperature-field" name="temperature_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing temperature data</div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filtering-method-et" class="form-label">Filtering Method</label>
+                                        <select class="form-select filtering-method" id="filtering-method-et" name="filtering_method">
+                                            <option value="none">No Filtering</option>
+                                            <option value="median">Median</option>
+                                            <option value="average">Average</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filter-window-et" class="form-label">Filter Window Size</label>
+                                        <input type="number" class="form-control filter-window" id="filter-window-et" name="filter_window" value="5" min="1" max="20">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EvaraFlow Specific Fields -->
+                            <div id="evaraflow-fields" class="device-specific-fields" style="display: none;">
+                                <h6 class="mb-3 mt-3"><i class="bi bi-gear"></i> EvaraFlow Configuration</h6>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="meter-reading-field" class="form-label">Meter Reading Field *</label>
+                                        <select class="form-select field-select" id="meter-reading-field" name="meter_reading_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing meter reading</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="flow-rate-field-ef" class="form-label">Flow Rate Field *</label>
+                                        <select class="form-select field-select" id="flow-rate-field-ef" name="flow_rate_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing flow rate</div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filtering-method-ef" class="form-label">Filtering Method</label>
+                                        <select class="form-select filtering-method" id="filtering-method-ef" name="filtering_method">
+                                            <option value="none">No Filtering</option>
+                                            <option value="median">Median</option>
+                                            <option value="average">Average</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filter-window-ef" class="form-label">Filter Window Size</label>
+                                        <input type="number" class="form-control filter-window" id="filter-window-ef" name="filter_window" value="5" min="1" max="20">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EvaraValve Specific Fields -->
+                            <div id="evaravalve-fields" class="device-specific-fields" style="display: none;">
+                                <h6 class="mb-3 mt-3"><i class="bi bi-gear"></i> EvaraValve Configuration</h6>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="flow-rate-field-ev" class="form-label">Flow Rate Field *</label>
+                                        <select class="form-select field-select" id="flow-rate-field-ev" name="flow_rate_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing flow rate</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="liters-field" class="form-label">Liters Field *</label>
+                                        <select class="form-select field-select" id="liters-field" name="liters_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing liters dispensed</div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filtering-method-ev" class="form-label">Filtering Method</label>
+                                        <select class="form-select filtering-method" id="filtering-method-ev" name="filtering_method">
+                                            <option value="none">No Filtering</option>
+                                            <option value="median">Median</option>
+                                            <option value="average">Average</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filter-window-ev" class="form-label">Filter Window Size</label>
+                                        <input type="number" class="form-control filter-window" id="filter-window-ev" name="filter_window" value="5" min="1" max="20">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EvaraDeep Specific Fields -->
+                            <div id="evaradeep-fields" class="device-specific-fields" style="display: none;">
+                                <h6 class="mb-3 mt-3"><i class="bi bi-gear"></i> EvaraDeep Configuration</h6>
+                                <div class="mb-3">
+                                    <label for="distance-field-ed" class="form-label">Distance Field (cm) *</label>
+                                    <select class="form-select field-select" id="distance-field-ed" name="distance_field">
+                                        <option value="" disabled selected>Select field...</option>
+                                    </select>
+                                    <div class="form-text">ThingSpeak field containing distance in cm</div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filtering-method-ed" class="form-label">Filtering Method</label>
+                                        <select class="form-select filtering-method" id="filtering-method-ed" name="filtering_method">
+                                            <option value="none">No Filtering</option>
+                                            <option value="median">Median</option>
+                                            <option value="average">Average</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filter-window-ed" class="form-label">Filter Window Size</label>
+                                        <input type="number" class="form-control filter-window" id="filter-window-ed" name="filter_window" value="5" min="1" max="20">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EvaraTDS Specific Fields -->
+                            <div id="evaratds-fields" class="device-specific-fields" style="display: none;">
+                                <h6 class="mb-3 mt-3"><i class="bi bi-gear"></i> EvaraTDS Configuration</h6>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="temperature-field-et" class="form-label">Temperature Field *</label>
+                                        <select class="form-select field-select" id="temperature-field-et" name="temperature_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing temperature</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="tds-field" class="form-label">TDS Field (ppm) *</label>
+                                        <select class="form-select field-select" id="tds-field" name="tds_field">
+                                            <option value="" disabled selected>Select field...</option>
+                                        </select>
+                                        <div class="form-text">ThingSpeak field containing TDS in ppm</div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filtering-method-etds" class="form-label">Filtering Method</label>
+                                        <select class="form-select filtering-method" id="filtering-method-etds" name="filtering_method">
+                                            <option value="none">No Filtering</option>
+                                            <option value="median">Median</option>
+                                            <option value="average">Average</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="filter-window-etds" class="form-label">Filter Window Size</label>
+                                        <input type="number" class="form-control filter-window" id="filter-window-etds" name="filter_window" value="5" min="1" max="20">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-between">
+                                <button type="button" class="btn btn-secondary" onclick="previousStep()">
+                                    <i class="bi bi-arrow-left"></i> Previous
+                                </button>
+                                <button type="button" class="btn btn-primary" onclick="nextStep()">
+                                    Next <i class="bi bi-arrow-right"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Step 3: CTOP Configuration -->
+                        <div class="form-step" id="step-3" style="display: none;">
+                            <h5 class="mb-3">Step 3: CTOP Configuration</h5>
                             <div class="mb-3">
                                 <label for="ctop-url-1" class="form-label">CTOP Endpoint URL *</label>
                                 <input type="url" class="form-control" id="ctop-url-1" name="ctop_url_1" required placeholder="https://ctop.iiit.ac.in/api/nodes/create-cin/391">
@@ -163,9 +365,9 @@
                             </div>
                         </div>
                         
-                        <!-- Step 3: Metadata -->
-                        <div class="form-step" id="step-3" style="display: none;">
-                            <h5 class="mb-3">Step 3: Location</h5>
+                        <!-- Step 4: Metadata -->
+                        <div class="form-step" id="step-4" style="display: none;">
+                            <h5 class="mb-3">Step 4: Location</h5>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="latitude" class="form-label">Latitude</label>
@@ -195,9 +397,9 @@
                             </div>
                         </div>
                         
-                        <!-- Step 4: Review -->
-                        <div class="form-step" id="step-4" style="display: none;">
-                            <h5 class="mb-3">Step 4: Review & Confirm</h5>
+                        <!-- Step 5: Review -->
+                        <div class="form-step" id="step-5" style="display: none;">
+                            <h5 class="mb-3">Step 5: Review & Confirm</h5>
                             <div class="alert alert-info">
                                 <i class="bi bi-info-circle"></i> Please review the device configuration before creating.
                             </div>

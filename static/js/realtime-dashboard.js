@@ -9,28 +9,68 @@ class RealtimeDashboard {
         this.timer = null;
         this.knownDeviceIds = new Set();
         this.currentFilter = 'all';
+        this.abortController = null;
+        this.visibilityHandler = null;
+    }
+
+    /**
+     * HTML-escape a value before interpolating it into an innerHTML template.
+     * device.name and device.emqx_topic are set by whoever created the
+     * device — without this, a device named e.g. `<img src=x onerror=...>`
+     * would execute for every operator who opens this dashboard.
+     */
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
     }
 
     start() {
         this.fetchData();
         this.timer = setInterval(() => this.fetchData(), this.pollingInterval);
+
+        // Pause polling while the tab is backgrounded (no point hammering
+        // the API for a table nobody is looking at), and catch back up with
+        // an immediate fetch the moment it's visible again.
+        this.visibilityHandler = () => {
+            if (document.visibilityState === 'hidden') {
+                if (this.timer) {
+                    clearInterval(this.timer);
+                    this.timer = null;
+                }
+            } else if (!this.timer) {
+                this.fetchData();
+                this.timer = setInterval(() => this.fetchData(), this.pollingInterval);
+            }
+        };
+        document.addEventListener('visibilitychange', this.visibilityHandler);
     }
 
     stop() {
         if (this.timer) clearInterval(this.timer);
+        if (this.visibilityHandler) document.removeEventListener('visibilitychange', this.visibilityHandler);
+        if (this.abortController) this.abortController.abort();
     }
 
     async fetchData() {
+        // Cancel any still-in-flight request before starting a new one —
+        // without this, a slow response can resolve after a newer one
+        // already rendered and overwrite the table with stale data.
+        if (this.abortController) this.abortController.abort();
+        this.abortController = new AbortController();
+
         try {
-            const response = await fetch('/api/local-logs');
+            const response = await fetch('/api/local-logs', { signal: this.abortController.signal });
             const result = await response.json();
-            
+
             if (result.success) {
                 this.updateStats(result.stats);
                 this.updateDevices(result.stats.active_devices_list || []);
             }
         } catch (error) {
-            console.error('[Dashboard] Fetch error:', error);
+            if (error.name !== 'AbortError') {
+                console.error('[Dashboard] Fetch error:', error);
+            }
         }
     }
 
@@ -57,20 +97,10 @@ class RealtimeDashboard {
         let visibleCount = 0;
 
         rows.forEach(row => {
-            const isActive = row.getAttribute('data-active') === 'true';
-            const hasError = row.getAttribute('data-error') === 'true';
-            
-            let show = false;
-            if (this.currentFilter === 'all') {
-                show = true;
-            } else if (this.currentFilter === 'active') {
-                show = isActive;
-            } else if (this.currentFilter === 'error') {
-                show = hasError;
-            } else if (this.currentFilter === 'inactive') {
-                show = !isActive;
-            }
-            
+            const bucket = row.getAttribute('data-status-bucket'); // 'active' | 'error' | 'inactive'
+
+            const show = this.currentFilter === 'all' || this.currentFilter === bucket;
+
             row.style.display = show ? '' : 'none';
             if (show) visibleCount++;
         });
@@ -119,9 +149,21 @@ class RealtimeDashboard {
         const tbody = document.getElementById('devices-body');
         if (!tbody) return;
 
-        // Helpers for robust property checking
+        // Single, exhaustive, mutually-exclusive classification so
+        // All === Active + Error + Inactive always adds up. is_active is an
+        // admin on/off config flag; last_status is the scheduler's runtime
+        // health value — they're different things and must not be conflated
+        // (see device_detail.html, which already renders them as two
+        // separate badges). A device with no last_status yet (never synced)
+        // falls into 'inactive' rather than being invisible to every filter.
         const isDevActive = (d) => d.is_active !== false && d.is_active !== 'false' && d.is_active !== 0;
-        const hasDevError = (d) => d.last_status && (String(d.last_status).toLowerCase() === 'error' || String(d.last_status).toLowerCase() === 'failed');
+        const getStatusBucket = (d) => {
+            if (!isDevActive(d)) return 'inactive'; // admin-disabled
+            const status = d.last_status ? String(d.last_status).toLowerCase() : null;
+            if (status === 'error' || status === 'failed') return 'error';
+            if (status === 'success') return 'active';
+            return 'inactive'; // stale ('inactive' from the scheduler) or never synced yet
+        };
 
         const formatSyncTime = (isoString) => {
             if (!isoString) return '<span class="text-muted small">Never</span>';
@@ -132,11 +174,14 @@ class RealtimeDashboard {
             return `<div class="sync-time-pill"><span class="sync-date">${dateStr}</span><span class="sync-time">${timeStr}</span></div>`;
         };
 
-        // Calculate filter tab counter badges accurately
+        // Calculate filter tab counter badges accurately — these three are
+        // an exhaustive partition of `devices`, so countAll always equals
+        // their sum (previously countActive == countAll always, because
+        // both were computed from the same is_active-only check).
         const countAll = devices.length;
-        const countActive = devices.filter(d => isDevActive(d)).length;
-        const countError = devices.filter(d => hasDevError(d)).length;
-        const countInactive = devices.filter(d => !isDevActive(d)).length;
+        const countActive = devices.filter(d => getStatusBucket(d) === 'active').length;
+        const countError = devices.filter(d => getStatusBucket(d) === 'error').length;
+        const countInactive = devices.filter(d => getStatusBucket(d) === 'inactive').length;
 
         // Update UI pill counts
         const elAll = document.getElementById('filter-count-all');
@@ -163,45 +208,49 @@ class RealtimeDashboard {
 
         devices.forEach(device => {
             let row = tbody.querySelector(`tr[data-device-id="${device.id}"]`);
-            const isActive = isDevActive(device);
-            const hasError = hasDevError(device);
-            const statusClass = device.last_status === 'success' ? 'status-success' : 
+            const statusBucket = getStatusBucket(device);
+            const hasError = statusBucket === 'error';
+            const statusClass = statusBucket === 'active' ? 'status-success' :
                                hasError ? 'status-error' : 'status-pending';
             const lastSyncHtml = formatSyncTime(device.last_sync_time);
             const statusText = (device.last_status || 'pending').toUpperCase();
             
             const isEmqx = device.data_source === 'emqx';
-            const channelHtml = isEmqx ? 
-                `<span class="badge bg-success me-1">EMQX</span><code class="small text-truncate d-inline-block" style="max-width: 160px;" title="${device.emqx_topic || ''}">${device.emqx_topic || 'MQTT'}</code>` :
-                `<span class="badge bg-primary me-1">ThingSpeak</span><code>${device.channel_id}</code>`;
-            
+            const safeName = this.escapeHtml(device.name);
+            const safeDeviceType = this.escapeHtml(device.device_type || 'Unknown');
+            const safeTopic = this.escapeHtml(device.emqx_topic || '');
+            const safeChannelId = this.escapeHtml(device.channel_id);
+            const safeId = this.escapeHtml(device.id);
+            const channelHtml = isEmqx ?
+                `<span class="badge bg-success me-1">EMQX</span><code class="small text-truncate d-inline-block" style="max-width: 160px;" title="${safeTopic}">${safeTopic || 'MQTT'}</code>` :
+                `<span class="badge bg-primary me-1">ThingSpeak</span><code>${safeChannelId}</code>`;
+
             if (!row) {
                 // New device row
                 row = document.createElement('tr');
                 row.setAttribute('data-device-id', device.id);
-                row.setAttribute('data-active', isActive ? 'true' : 'false');
-                row.setAttribute('data-error', hasError ? 'true' : 'false');
-                
+                row.setAttribute('data-status-bucket', statusBucket);
+
                 row.innerHTML = `
                     <td class="col-name">
-                        <strong class="device-name">${device.name}</strong>
+                        <strong class="device-name">${safeName}</strong>
                     </td>
-                    <td class="col-type"><span class="badge bg-secondary">${device.device_type || 'Unknown'}</span></td>
+                    <td class="col-type"><span class="badge bg-secondary">${safeDeviceType}</span></td>
                     <td class="col-channel">${channelHtml}</td>
                     <td class="col-status"><span class="status-badge ${statusClass}">${statusText}</span></td>
                     <td class="col-sync">${lastSyncHtml}</td>
                     <td class="col-actions">
                         <div class="btn-group">
-                            <button class="btn btn-sm btn-outline-primary" onclick="fetchDevice('${device.id}')" title="Sync">
+                            <button class="btn btn-sm btn-outline-primary" onclick="fetchDevice('${safeId}')" title="Sync">
                                 <i class="bi bi-arrow-repeat"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-info" onclick="location.href='/logs?device_id=${device.id}'" title="Logs">
+                            <button class="btn btn-sm btn-outline-info" onclick="location.href='/logs?device_id=${safeId}'" title="Logs">
                                 <i class="bi bi-journal"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-warning" onclick="toggleDevice('${device.id}')" title="Toggle">
+                            <button class="btn btn-sm btn-outline-warning" onclick="toggleDevice('${safeId}')" title="Toggle">
                                 <i class="bi bi-power"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteDevice('${device.id}')" title="Delete">
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteDevice('${safeId}')" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>
@@ -219,8 +268,7 @@ class RealtimeDashboard {
                 this.knownDeviceIds.add(device.id);
             } else {
                 // Atomic data updates
-                row.setAttribute('data-active', isActive ? 'true' : 'false');
-                row.setAttribute('data-error', hasError ? 'true' : 'false');
+                row.setAttribute('data-status-bucket', statusBucket);
                 
                 // 1. Update Name
                 const nameEl = row.querySelector('.device-name');

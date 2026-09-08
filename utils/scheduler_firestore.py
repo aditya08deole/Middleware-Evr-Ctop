@@ -3,6 +3,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone
 import logging
 import json
+import os
 import threading
 from firebase.firestore_service import FirestoreService
 from services import ThingSpeakService, PreprocessService, CTOPService, EMQXService
@@ -342,15 +343,60 @@ def sync_mirror_job():
     
     logger.info("Hourly sync complete.")
 
+_scheduler_lock_file = None  # kept referenced so the OS-level lock isn't released by GC
+
+
+def _acquire_scheduler_ownership():
+    """
+    Ensure only one process owns the scheduler/EMQX clients when this app is
+    run under multiple Gunicorn workers (each worker imports app.py and calls
+    init_scheduler() independently — without this guard, N workers means N
+    BackgroundScheduler instances all polling and posting the same devices,
+    and N MQTT clients fighting over the same client_id).
+
+    Uses a non-blocking file lock (fcntl, POSIX-only): the first worker to
+    start wins the lock and runs the scheduler; the rest skip it. On
+    platforms without fcntl (Windows local dev via `python app.py`), this is
+    a no-op — those runs are always single-process anyway.
+    """
+    try:
+        import fcntl
+    except ImportError:
+        return True
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    instance_dir = os.path.join(base_dir, 'instance')
+    os.makedirs(instance_dir, exist_ok=True)
+    lock_path = os.path.join(instance_dir, 'scheduler.lock')
+
+    lock_file = open(lock_path, 'w')
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        return False
+
+    global _scheduler_lock_file
+    _scheduler_lock_file = lock_file
+    return True
+
+
 def init_scheduler(app):
     """
     Initialize the scheduler with the Flask app
-    
+
     Args:
         app: Flask application instance
     """
+    if not _acquire_scheduler_ownership():
+        logger.info(
+            "Another worker process already owns the scheduler/EMQX clients "
+            "— skipping scheduler startup in this worker."
+        )
+        return
+
     interval_seconds = Config.SCHEDULER_INTERVAL_SECONDS
-    
+
     # Add the scheduled job
     scheduler.add_job(
         func=scheduled_job,

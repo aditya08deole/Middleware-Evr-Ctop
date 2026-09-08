@@ -3,9 +3,8 @@ Encryption utility for securing sensitive data like API keys
 """
 import os
 import base64
+import warnings
 from cryptography.fernet import Fernet
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from typing import Optional
 
 
@@ -44,21 +43,37 @@ class EncryptionService:
         if os.path.exists(key_path):
             with open(key_path, 'rb') as f:
                 return f.read()
-        
+
+        # SECURITY: mirror config.py's SECRET_KEY requirement — refuse to
+        # silently generate (and write unencrypted to disk) a brand-new
+        # encryption key in production. A key generated after deployment
+        # can't decrypt any credential that was already encrypted with a
+        # previous key, and a key sitting in a plaintext file is only as
+        # secure as the filesystem it's on.
+        env = os.environ.get('FLASK_ENV', os.environ.get('ENV', 'development'))
+        if env == 'production':
+            raise ValueError(
+                "ENCRYPTION_KEY environment variable must be set in production "
+                "(no encryption.key file found either)."
+            )
+
         # Generate new key
         key = Fernet.generate_key()
-        
+
         # Save key file
         with open(key_path, 'wb') as f:
             f.write(key)
-        
+
         # Add to .gitignore if not already there
         self._add_to_gitignore(key_path)
-        
-        print(f"Generated new encryption key at {key_path}")
-        print("IMPORTANT: Keep this file secure and back it up!")
-        print("Set ENCRYPTION_KEY environment variable for production")
-        
+
+        warnings.warn(
+            f"ENCRYPTION_KEY not set — generated a new key at {key_path} for "
+            "development. Do NOT use this in production. Set ENCRYPTION_KEY "
+            "env var before deployment.",
+            UserWarning
+        )
+
         return key
     
     def _add_to_gitignore(self, filepath: str):
@@ -140,25 +155,27 @@ class EncryptionService:
     def decrypt_dict(self, data_dict: dict, fields_to_decrypt: list) -> dict:
         """
         Decrypt specific fields in a dictionary
-        
+
         Args:
             data_dict: Dictionary containing encrypted data
             fields_to_decrypt: List of field names to decrypt
-            
+
         Returns:
             Dictionary with specified fields decrypted
+
+        Raises:
+            Exception: if any field fails to decrypt. A rotated/wrong key
+            must not silently leave raw ciphertext in place of the real
+            value — a caller using the returned dict (e.g. as an
+            Authorization header) would send garbage to a live API without
+            any indication it wasn't the real credential.
         """
         decrypted_dict = data_dict.copy()
-        
+
         for field in fields_to_decrypt:
             if field in decrypted_dict and decrypted_dict[field]:
-                try:
-                    decrypted_dict[field] = self.decrypt(str(decrypted_dict[field]))
-                except Exception as e:
-                    print(f"Failed to decrypt field {field}: {str(e)}")
-                    # Keep original value if decryption fails
-                    pass
-        
+                decrypted_dict[field] = self.decrypt(str(decrypted_dict[field]))
+
         return decrypted_dict
 
 

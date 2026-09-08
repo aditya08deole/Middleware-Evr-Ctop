@@ -23,16 +23,22 @@ class DeviceCache:
                 cls._instance._refresh_interval = 300  # 5 minutes
         return cls._instance
     
-    def get_devices(self, force_refresh=False):
+    def get_devices(self, force_refresh=False, active_only=True):
         """
-        Get the list of active devices from the local store.
+        Get devices from the local store.
         If force_refresh is True, it triggers a sync from Firebase to the local store.
+
+        active_only defaults to True to preserve existing behavior for the
+        scheduler (which must never poll/post to a disabled device) — pass
+        active_only=False for UI/reporting callers that need to show
+        disabled devices too (e.g. the dashboard), rather than having them
+        silently disappear instead of showing as disabled.
         """
         if force_refresh:
             self.refresh()
-            
+
         # Always return what's in the local mirror (which is already in memory)
-        return local_device_store.get_devices(active_only=True)
+        return local_device_store.get_devices(active_only=active_only)
     
     def refresh(self):
         """

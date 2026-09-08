@@ -31,9 +31,10 @@ def get_settings():
     # Get user data from Firestore
     user_data = firestore_service.get_user(uid)
     
-    # Get scheduler settings from config
+    # Get scheduler settings from config (Config only stores the interval in
+    # seconds — SCHEDULER_INTERVAL_MINUTES doesn't exist, derive it instead)
     scheduler_settings = {
-        'interval_minutes': Config.SCHEDULER_INTERVAL_MINUTES,
+        'interval_minutes': round(Config.SCHEDULER_INTERVAL_SECONDS / 60, 2),
         'enabled': True,  # Could be stored in Firestore
         'timezone': 'UTC'
     }

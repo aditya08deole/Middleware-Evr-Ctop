@@ -308,8 +308,21 @@ class FirestoreService:
         """Update system settings"""
         if not self.is_initialized():
             raise Exception("Firestore not initialized")
-        
+
         settings_ref = self._db.collection('settings').document('global_settings')
+        settings['updated_at'] = firestore.SERVER_TIMESTAMP
+        settings_ref.set(settings, merge=True)
+        return True
+
+    def create_or_update_settings(self, doc_id: str, settings: Dict) -> bool:
+        """Create or update a named settings document (e.g. 'scheduler',
+        'notifications'), separate from the single 'global_settings' doc
+        used by get_settings()/update_settings() above."""
+        if not self.is_initialized():
+            raise Exception("Firestore not initialized")
+
+        settings_ref = self._db.collection('settings').document(doc_id)
+        settings = dict(settings)
         settings['updated_at'] = firestore.SERVER_TIMESTAMP
         settings_ref.set(settings, merge=True)
         return True

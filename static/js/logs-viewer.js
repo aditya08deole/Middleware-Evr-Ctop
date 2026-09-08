@@ -10,11 +10,34 @@ class LogsViewer {
         this.filter = 'all';
         this.deviceId = new URLSearchParams(window.location.search).get('device_id');
         this.knownLogIds = new Set();
+        this.abortController = null;
+        this.visibilityHandler = null;
     }
 
     start() {
         this.fetchLogs();
         this.timer = setInterval(() => this.fetchLogs(), this.pollingInterval);
+
+        // Pause polling while the tab is backgrounded; catch up immediately
+        // once it's visible again (see realtime-dashboard.js for the same pattern).
+        this.visibilityHandler = () => {
+            if (document.visibilityState === 'hidden') {
+                if (this.timer) {
+                    clearInterval(this.timer);
+                    this.timer = null;
+                }
+            } else if (!this.timer) {
+                this.fetchLogs();
+                this.timer = setInterval(() => this.fetchLogs(), this.pollingInterval);
+            }
+        };
+        document.addEventListener('visibilitychange', this.visibilityHandler);
+    }
+
+    stop() {
+        if (this.timer) clearInterval(this.timer);
+        if (this.visibilityHandler) document.removeEventListener('visibilitychange', this.visibilityHandler);
+        if (this.abortController) this.abortController.abort();
     }
 
     setFilter(status) {
@@ -24,25 +47,61 @@ class LogsViewer {
         this.fetchLogs();
     }
 
+    /**
+     * HTML-escape a value before interpolating it into an innerHTML template.
+     * Device name/type and log messages ultimately originate from
+     * user-configured device data — escape them before they land in the DOM.
+     */
+    escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[ch]));
+    }
+
+    /**
+     * Stable FNV-1a hash of a log's own content, used as a dedupe key when
+     * the backend doesn't stamp an `id` on the entry. Math.random() here
+     * previously produced a *different* key for the same content-less log on
+     * every poll, so it was never recognized as "already shown" and kept
+     * getting re-inserted as a duplicate row.
+     */
+    stableLogKey(log) {
+        const basis = `${log.device_id || ''}|${log.created_at || ''}|${log.message || log.error_message || ''}`;
+        let hash = 0x811c9dc5;
+        for (let i = 0; i < basis.length; i++) {
+            hash ^= basis.charCodeAt(i);
+            hash = Math.imul(hash, 0x01000193);
+        }
+        return (hash >>> 0).toString(36);
+    }
+
     clearContainer() {
         const container = document.getElementById('logs-container');
         if (container) container.innerHTML = '';
     }
 
     async fetchLogs() {
+        // Cancel any still-in-flight request before starting a new one, so
+        // an older, slower response can't land after a newer one and
+        // overwrite the freshly-rendered log list.
+        if (this.abortController) this.abortController.abort();
+        this.abortController = new AbortController();
+
         try {
             let url = `/api/local-logs?limit=100`;
             if (this.deviceId) url += `&device_id=${this.deviceId}`;
-            
-            const response = await fetch(url);
+
+            const response = await fetch(url, { signal: this.abortController.signal });
             const result = await response.json();
-            
+
             if (result.success) {
                 this.renderLogs(result.data);
                 this.updateUI(result.stats);
             }
         } catch (error) {
-            console.error('[LogsViewer] Fetch error:', error);
+            if (error.name !== 'AbortError') {
+                console.error('[LogsViewer] Fetch error:', error);
+            }
         }
     }
 
@@ -80,7 +139,7 @@ class LogsViewer {
 
         // Prepend new logs
         filteredLogs.slice().reverse().forEach(log => {
-            const logId = `log-${log.id || Math.random().toString(36).substr(2, 9)}`;
+            const logId = `log-${log.id || this.stableLogKey(log)}`;
             if (!this.knownLogIds.has(logId)) {
                 const logDiv = document.createElement('div');
                 logDiv.id = logId;
@@ -114,8 +173,8 @@ class LogsViewer {
 
     getLogTemplate(log) {
         const timestamp = log.created_at ? new Date(log.created_at).toLocaleString() : 'N/A';
-        const deviceName = log.device_name || log.device_id || 'Unknown Device';
-        
+        const deviceName = this.escapeHtml(log.device_name || log.device_id || 'Unknown Device');
+
         let payloadHtml = '';
         if (log.request_payload) {
             try {
@@ -126,11 +185,11 @@ class LogsViewer {
                             <i class="bi bi-code-slash"></i> View Payload
                         </button>
                         <div class="d-none mt-2 bg-dark text-light p-3 rounded" style="font-family: 'Consolas', monospace; font-size: 11px;">
-                            <pre class="m-0 text-success"><code>${JSON.stringify(parsed, null, 2)}</code></pre>
+                            <pre class="m-0 text-success"><code>${this.escapeHtml(JSON.stringify(parsed, null, 2))}</code></pre>
                         </div>
                     </div>`;
             } catch(e) {
-                payloadHtml = `<div class="mt-2 small text-muted">Payload: ${log.request_payload.substring(0, 50)}...</div>`;
+                payloadHtml = `<div class="mt-2 small text-muted">Payload: ${this.escapeHtml(log.request_payload.substring(0, 50))}...</div>`;
             }
         }
 
@@ -142,12 +201,12 @@ class LogsViewer {
                     </div>
                     <div>
                         <h6 class="mb-0 fw-bold">${deviceName}</h6>
-                        <small class="text-muted">${log.device_type || 'IoT Node'}</small>
+                        <small class="text-muted">${this.escapeHtml(log.device_type || 'IoT Node')}</small>
                     </div>
                 </div>
                 <div class="text-end">
                     <span class="badge ${log.status === 'success' ? 'bg-success' : 'bg-danger'} px-3">
-                        ${log.status.toUpperCase()}
+                        ${this.escapeHtml((log.status || '').toUpperCase())}
                     </span>
                     <div class="text-muted" style="font-size: 10px; margin-top: 4px;">
                         <i class="bi bi-clock"></i> ${timestamp}
@@ -155,8 +214,8 @@ class LogsViewer {
                 </div>
             </div>
             <div class="mt-2 ps-1 border-top pt-2">
-                <span class="badge bg-light text-dark border mb-2" style="font-size: 9px;">${log.log_type.toUpperCase()}</span>
-                <p class="mb-0 text-dark" style="font-size: 14px;">${log.message || log.error_message}</p>
+                <span class="badge bg-light text-dark border mb-2" style="font-size: 9px;">${this.escapeHtml((log.log_type || '').toUpperCase())}</span>
+                <p class="mb-0 text-dark" style="font-size: 14px;">${this.escapeHtml(log.message || log.error_message)}</p>
                 ${payloadHtml}
             </div>
         `;

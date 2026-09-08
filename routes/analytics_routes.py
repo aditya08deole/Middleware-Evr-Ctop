@@ -169,38 +169,41 @@ def get_data_volume():
 def get_device_status():
     """Get device status distribution for charts"""
     try:
-        fs = get_firestore_service()
-        
-        if not fs:
-            # Return sample data if Firestore not available
-            return jsonify({
-                'success': True,
-                'data': {
-                    'active': 8,
-                    'inactive': 2
-                }
-            })
-        
-        # Get devices and count active/inactive
-        devices = fs.list_devices(limit=100)
-        
+        # Use the real-time local mirror (updated every scheduler tick)
+        # rather than querying Firestore directly, which only reflects the
+        # last hourly sync — and classify the same way the dashboard does:
+        # is_active is an admin on/off flag, last_status is the scheduler's
+        # runtime health value, and they're deliberately not conflated (a
+        # disabled device is 'inactive' regardless of its last recorded
+        # status; an enabled device is bucketed by last_status).
+        from utils.device_cache import device_cache
+        devices = device_cache.get_devices(active_only=False)
+
         active_count = 0
+        error_count = 0
         inactive_count = 0
-        
+
         for device in devices:
-            if device.get('is_active', False):
+            if not device.get('is_active', True):
+                inactive_count += 1
+                continue
+            status = str(device.get('last_status') or '').lower()
+            if status in ('error', 'failed'):
+                error_count += 1
+            elif status == 'success':
                 active_count += 1
             else:
                 inactive_count += 1
-        
+
         return jsonify({
             'success': True,
             'data': {
                 'active': active_count,
+                'error': error_count,
                 'inactive': inactive_count
             }
         })
-    
+
     except Exception as e:
         return jsonify({
             'success': False,

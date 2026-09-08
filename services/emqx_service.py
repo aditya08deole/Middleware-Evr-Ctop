@@ -44,6 +44,14 @@ class EMQXService:
         self._clients = {}
         self._clients_lock = threading.Lock()
 
+        # Per-device stable field-slot schema for named-key MQTT payloads:
+        # {device_id: [key_name_for_field1, key_name_for_field2, ...]}.
+        # Established from the first message and only ever appended to, so a
+        # later message missing one key doesn't shift every other key into a
+        # different field slot (see _mqtt_message_to_feed).
+        self._device_field_schemas = {}
+        self._schema_lock = threading.Lock()
+
     def subscribe_device(self, device_id, device_data):
         """
         Start an MQTT subscription for a device.
@@ -227,6 +235,9 @@ class EMQXService:
         with self._buffer_lock:
             self._message_buffers.pop(device_id_str, None)
 
+        with self._schema_lock:
+            self._device_field_schemas.pop(device_id_str, None)
+
     def fetch_data(self, device_id, device_data=None):
         """
         Fetch the latest buffered MQTT data for a device.
@@ -329,7 +340,10 @@ class EMQXService:
         Supports two incoming formats:
         1. ThingSpeak-style: {"field1": "25.5", "field2": "60", "created_at": "..."}
         2. Named keys: {"temperature": 25.5, "distance": 30.2, "created_at": "..."}
-           → mapped to field1, field2, etc. in SORTED key order for deterministic mapping
+           → mapped to field1, field2, etc. using a per-device schema that's
+           established from the first message and only ever appended to
+           (never re-sorted from scratch), so one message missing a key
+           doesn't shift every other key into a different field slot.
         
         Args:
             mqtt_msg: Parsed JSON dict from MQTT message
@@ -371,9 +385,24 @@ class EMQXService:
                 if key in mqtt_msg and key not in feed:
                     feed[key] = str(mqtt_msg[key]) if mqtt_msg[key] is not None else None
         else:
-            # Named keys → auto-map to field1, field2, etc. in SORTED order for determinism
+            # Named keys → map to field1, field2, etc. using a stable
+            # per-device schema (established once, extended for new keys,
+            # never re-derived from just this message's own key set).
             data_keys = sorted([k for k in mqtt_msg.keys() if k not in skip_keys])
-            for i, key in enumerate(data_keys[:8], start=1):
+            with self._schema_lock:
+                schema = self._device_field_schemas.get(device_id)
+                if schema is None:
+                    schema = list(data_keys[:8])
+                    self._device_field_schemas[device_id] = schema
+                else:
+                    for key in data_keys:
+                        if key not in schema and len(schema) < 8:
+                            schema.append(key)
+                schema_snapshot = list(schema)
+
+            for i, key in enumerate(schema_snapshot, start=1):
+                if key not in mqtt_msg:
+                    continue
                 value = mqtt_msg[key]
                 field_name = f'field{i}'
                 if field_name not in feed:

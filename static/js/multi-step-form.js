@@ -1,8 +1,55 @@
 // Multi-step form functionality for device creation
 
 let currentStep = 1;
-const totalSteps = 4;
+const totalSteps = 5;
 const formData = {};
+
+// field1..field8 options are identical across every sensor-field <select> —
+// generate them once instead of hand-duplicating <option> blocks per select.
+function populateFieldSelectOptions() {
+    document.querySelectorAll('select.field-select').forEach(select => {
+        for (let i = 1; i <= 8; i++) {
+            const option = document.createElement('option');
+            option.value = `field${i}`;
+            option.textContent = `Field ${i}`;
+            select.appendChild(option);
+        }
+    });
+}
+
+// Show the sensor-field group for the selected device type and mark its
+// fields required (mirrors add_device.html's showDeviceFields()).
+function showDeviceTypeFields(deviceType) {
+    document.querySelectorAll('.device-specific-fields').forEach(el => {
+        el.style.display = 'none';
+    });
+    document.querySelectorAll('#step-2 .field-select').forEach(el => {
+        el.removeAttribute('required');
+    });
+    document.getElementById('tank-height').removeAttribute('required');
+
+    if (deviceType === 'EvaraTank') {
+        document.getElementById('evaratank-fields').style.display = 'block';
+        document.getElementById('tank-height').setAttribute('required', 'required');
+        document.getElementById('distance-field').setAttribute('required', 'required');
+        document.getElementById('temperature-field').setAttribute('required', 'required');
+    } else if (deviceType === 'EvaraFlow') {
+        document.getElementById('evaraflow-fields').style.display = 'block';
+        document.getElementById('meter-reading-field').setAttribute('required', 'required');
+        document.getElementById('flow-rate-field-ef').setAttribute('required', 'required');
+    } else if (deviceType === 'EvaraValve') {
+        document.getElementById('evaravalve-fields').style.display = 'block';
+        document.getElementById('flow-rate-field-ev').setAttribute('required', 'required');
+        document.getElementById('liters-field').setAttribute('required', 'required');
+    } else if (deviceType === 'EvaraDeep') {
+        document.getElementById('evaradeep-fields').style.display = 'block';
+        document.getElementById('distance-field-ed').setAttribute('required', 'required');
+    } else if (deviceType === 'EvaraTDS') {
+        document.getElementById('evaratds-fields').style.display = 'block';
+        document.getElementById('temperature-field-et').setAttribute('required', 'required');
+        document.getElementById('tds-field').setAttribute('required', 'required');
+    }
+}
 
 // Initialize form
 document.addEventListener('DOMContentLoaded', () => {
@@ -12,6 +59,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Initialize platform toggle state
     togglePlatformFields();
+    populateFieldSelectOptions();
+
+    const deviceTypeSelect = document.getElementById('device-type');
+    if (deviceTypeSelect) {
+        deviceTypeSelect.addEventListener('change', () => showDeviceTypeFields(deviceTypeSelect.value));
+    }
 });
 
 // Toggle between ThingSpeak and EMQX field groups
@@ -66,7 +119,7 @@ function nextStep() {
     updateProgress();
     
     // If on review step, populate review content
-    if (currentStep === 4) {
+    if (currentStep === totalSteps) {
         populateReview();
     }
 }
@@ -88,9 +141,9 @@ function previousStep() {
 
 function validateStep(step) {
     const stepElement = document.getElementById(`step-${step}`);
-    const inputs = stepElement.querySelectorAll('input[required]');
+    const inputs = stepElement.querySelectorAll('input[required], select[required]');
     let isValid = true;
-    
+
     inputs.forEach(input => {
         if (!input.value.trim()) {
             isValid = false;
@@ -164,6 +217,17 @@ function validateStep(step) {
     }
     
     if (step === 2) {
+        const deviceType = document.getElementById('device-type').value;
+        if (!deviceType) {
+            isValid = false;
+            showAlert('Please select a device type', 'warning');
+        }
+        // Field-selects are only marked required once showDeviceTypeFields()
+        // runs for the chosen type, so the generic required-input loop above
+        // already validates them — nothing further needed here.
+    }
+
+    if (step === 3) {
         const ctopUrl1 = document.getElementById('ctop-url-1');
         if (ctopUrl1.value && !isValidUrl(ctopUrl1.value)) {
             isValid = false;
@@ -174,7 +238,7 @@ function validateStep(step) {
                 errorElement.style.display = 'block';
             }
         }
-        
+
         const ctopUrl2 = document.getElementById('ctop-url-2');
         if (ctopUrl2.value && !isValidUrl(ctopUrl2.value)) {
             isValid = false;
@@ -186,8 +250,8 @@ function validateStep(step) {
             }
         }
     }
-    
-    if (step === 3) {
+
+    if (step === 4) {
         const latitude = document.getElementById('latitude');
         if (latitude.value && (parseFloat(latitude.value) < -90 || parseFloat(latitude.value) > 90)) {
             isValid = false;
@@ -220,8 +284,8 @@ function validateStep(step) {
 
 function saveStepData(step) {
     const stepElement = document.getElementById(`step-${step}`);
-    const inputs = stepElement.querySelectorAll('input');
-    
+    const inputs = stepElement.querySelectorAll('input, select');
+
     inputs.forEach(input => {
         if (input.name) {
             if (input.type === 'radio') {
@@ -236,7 +300,41 @@ function saveStepData(step) {
             }
         }
     });
-    
+
+    // Only keep sensor-config fields relevant to the selected device type —
+    // hidden groups for other types share input `name`s (e.g. every group
+    // has a `filtering_method` select), so without this the last group in
+    // DOM order would silently overwrite the one the user actually filled in.
+    if (step === 2) {
+        const deviceType = formData.device_type;
+        const relevantFieldsByType = {
+            EvaraTank: ['tank_height', 'distance_field', 'temperature_field'],
+            EvaraFlow: ['meter_reading_field', 'flow_rate_field'],
+            EvaraValve: ['flow_rate_field', 'liters_field'],
+            EvaraDeep: ['distance_field'],
+            EvaraTDS: ['temperature_field', 'tds_field']
+        };
+        const groupIdByType = {
+            EvaraTank: 'evaratank-fields',
+            EvaraFlow: 'evaraflow-fields',
+            EvaraValve: 'evaravalve-fields',
+            EvaraDeep: 'evaradeep-fields',
+            EvaraTDS: 'evaratds-fields'
+        };
+        const activeGroup = document.getElementById(groupIdByType[deviceType]);
+        if (activeGroup) {
+            // Re-read filtering_method/filter_window/field-selects from the
+            // active group specifically, since the generic loop above just
+            // took whichever group's inputs happened to appear last in the DOM.
+            activeGroup.querySelectorAll('input, select').forEach(el => {
+                if (el.name) formData[el.name] = el.value;
+            });
+        }
+        (relevantFieldsByType[deviceType] || []).forEach(name => {
+            if (!(name in formData)) formData[name] = null;
+        });
+    }
+
     // Ensure data_source is always captured from Step 1
     if (step === 1) {
         const isEmqx = document.getElementById('platform-emqx').checked;
@@ -267,9 +365,22 @@ function populateReview() {
     
     let reviewItems = [
         { label: 'Device ID', value: formData.name || 'Not provided' },
-        { label: 'Platform', value: isEmqx ? '<span class="badge bg-success">EMQX (MQTT)</span>' : '<span class="badge bg-primary">ThingSpeak</span>' },
+        { label: 'Device Type', value: formData.device_type || 'Not provided' },
+        { label: 'Platform', value: isEmqx ? '<span class="badge bg-success">EMQX (MQTT)</span>' : '<span class="badge bg-primary">ThingSpeak</span>', safe: true },
     ];
-    
+
+    const sensorFieldsByType = {
+        EvaraTank: [['Tank Height (cm)', 'tank_height'], ['Distance Field', 'distance_field'], ['Temperature Field', 'temperature_field']],
+        EvaraFlow: [['Meter Reading Field', 'meter_reading_field'], ['Flow Rate Field', 'flow_rate_field']],
+        EvaraValve: [['Flow Rate Field', 'flow_rate_field'], ['Liters Field', 'liters_field']],
+        EvaraDeep: [['Distance Field', 'distance_field']],
+        EvaraTDS: [['Temperature Field', 'temperature_field'], ['TDS Field', 'tds_field']]
+    };
+    (sensorFieldsByType[formData.device_type] || []).forEach(([label, key]) => {
+        reviewItems.push({ label, value: formData[key] || 'Not provided' });
+    });
+    reviewItems.push({ label: 'Filtering Method', value: formData.filtering_method || 'none' });
+
     if (isEmqx) {
         reviewItems.push(
             { label: 'Broker URL', value: formData.emqx_broker_url || 'Not provided' },
@@ -295,10 +406,19 @@ function populateReview() {
     
     reviewContent.innerHTML = reviewItems.map(item => `
         <div class="review-item">
-            <span class="review-label">${item.label}</span>
-            <span class="review-value">${item.value}</span>
+            <span class="review-label">${escapeHtml(item.label)}</span>
+            <span class="review-value">${item.safe ? item.value : escapeHtml(item.value)}</span>
         </div>
     `).join('');
+}
+
+// device/form values here are whatever the operator just typed in the
+// preceding steps — escape before interpolating into innerHTML so a device
+// name or MQTT topic containing HTML can't execute in the review panel.
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
 }
 
 async function testConnection() {
@@ -340,25 +460,48 @@ async function testConnection() {
     }
 }
 
+// Fields the backend/preprocessing pipeline does real arithmetic on (e.g.
+// `tank_height - distance` in preprocess_service.py) — every other captured
+// field is fine as a string, but these must be actual numbers or device
+// processing throws on the very first reading.
+function coerceNumericFields(data) {
+    const floatFields = ['tank_height', 'latitude', 'longitude'];
+    const intFields = ['filter_window', 'emqx_port'];
+
+    floatFields.forEach(field => {
+        if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
+            data[field] = parseFloat(data[field]);
+        } else if (data[field] === '') {
+            data[field] = null;
+        }
+    });
+    intFields.forEach(field => {
+        if (data[field] !== undefined && data[field] !== null && data[field] !== '') {
+            data[field] = parseInt(data[field], 10);
+        }
+    });
+    return data;
+}
+
 async function handleSubmit(e) {
     e.preventDefault();
-    
+
     const confirmCheckbox = document.getElementById('confirm-create');
     if (!confirmCheckbox.checked) {
         showAlert('Please confirm the device configuration', 'warning');
         return;
     }
-    
+
     const submitBtn = document.getElementById('submit-btn');
     window.loading.showButtonSpinner(submitBtn, 'Creating Device...');
-    
+
     try {
         const response = await fetch('/devices/', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(formData)
+            body: JSON.stringify(coerceNumericFields(formData))
         });
         
         const result = await response.json();
@@ -388,24 +531,5 @@ function isValidUrl(string) {
     }
 }
 
-// Alert function (assuming it exists globally)
-function showAlert(message, type = 'info') {
-    // Check if Bootstrap alert exists
-    const alertDiv = document.createElement('div');
-    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
-    alertDiv.style.position = 'fixed';
-    alertDiv.style.top = '20px';
-    alertDiv.style.right = '20px';
-    alertDiv.style.zIndex = '9999';
-    alertDiv.innerHTML = `
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    
-    document.body.appendChild(alertDiv);
-    
-    // Auto-dismiss after 5 seconds
-    setTimeout(() => {
-        alertDiv.remove();
-    }, 5000);
-}
+// showAlert is defined globally in base.html (add_device_multi.html extends
+// it) — reused here rather than redefined.
