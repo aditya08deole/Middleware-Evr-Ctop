@@ -153,10 +153,15 @@ def process_device(device_id, device_data):
                 })
                 return
 
-            # Still within the freshness window — just an idle poll tick, not stale.
+            # Still within the freshness window — just an idle poll tick, not
+            # stale. Nothing was actually sent this tick, so don't touch
+            # last_status: it previously got hard-set to 'success' here even
+            # when the last real CTOP send had failed, which made the
+            # dashboard flash "success" for a few seconds every time
+            # ThingSpeak hadn't produced a fresh reading yet, then flip back
+            # to 'error' the moment a new reading came in and failed again.
             logger.debug(f"Device {device_data.get('name')} idle this tick (last reading {age_minutes:.1f} min ago).")
             local_device_store.update_device_fields(device_id, {
-                'last_status': 'success',
                 'last_sync_time': now_utc.isoformat()
             })
             return
@@ -176,10 +181,11 @@ def process_device(device_id, device_data):
             return
 
         if not processed_data:
-            # Fresh data was fetched but preprocessing produced no entries
+            # Fresh data was fetched but preprocessing produced no entries.
+            # No send was attempted, so don't overwrite last_status — see
+            # the idle-tick branch above for why.
             logger.debug(f"No new entries to process for device {device_data.get('name')}")
             local_device_store.update_device_fields(device_id, {
-                'last_status': 'success',
                 'last_reading_time': latest_reading_time.isoformat() if latest_reading_time else None,
                 'last_sync_time': datetime.utcnow().isoformat()
             })
@@ -214,10 +220,21 @@ def process_device(device_id, device_data):
                 new_transformed_data.append(transformed_data[i])
                 
         if not new_transformed_data:
-            # Silently skip if there's no new data (to prevent terminal spam every 15s)
+            # Silently skip if there's no new data (to prevent terminal spam every 15s).
+            #
+            # This is the main cause of the dashboard flashing "success" for
+            # a few seconds and then flipping back to "error": when the
+            # last CTOP send for the current entry_id failed, entry_id is
+            # deliberately NOT advanced (so the failed reading gets retried
+            # next tick) — but that means once ThingSpeak stops returning a
+            # newer reading than last_processed_entry_id, this same entry
+            # looks "already handled" and used to get unconditionally
+            # stamped 'success' here, overwriting the real 'error' status
+            # from the failed send. No send was attempted this tick, so
+            # last_status must be left exactly as the last real attempt
+            # left it.
             logger.debug(f"No new data for device {device_id} (last entry: {last_entry_id})")
             local_device_store.update_device_fields(device_id, {
-                'last_status': 'success',
                 'last_reading_time': latest_reading_time.isoformat() if latest_reading_time else None,
                 'last_sync_time': datetime.utcnow().isoformat()
             })
@@ -225,24 +242,33 @@ def process_device(device_id, device_data):
             
         # Step 5: Send to CTOP endpoints
         success_count = 0
+        last_send_error = None
         latest_entry_id = str(last_entry_id)
-        
+
         for i, payload in enumerate(new_transformed_data):
             results = ctop_service.send_to_ctop(device_id, device_data, payload=payload)
-            
+
             # Check if it was successful (results is a dict with success field)
             if isinstance(results, dict) and results.get('success'):
                 success_count += 1
                 latest_entry_id = str(new_processed_data[i].get('entry_id', latest_entry_id))
-        
+            elif isinstance(results, dict):
+                last_send_error = results.get('error')
+
         logger.info(f"Sent {success_count}/{len(new_transformed_data)} NEW payloads to CTOP for device {device_data.get('name')}")
-        
-        # Update local mirror (entry_id, status, sync_time, reading_time)
+
+        # Update local mirror (entry_id, status, sync_time, reading_time).
+        # update_entry_id() has no last_error parameter, so the actual CTOP
+        # error message (e.g. "HTTP 503: ...") was previously lost — the
+        # device would show status 'error' with no explanation anywhere in
+        # the UI. Set it explicitly, and clear it on success.
         final_status = 'success' if success_count > 0 else 'error'
         local_device_store.update_entry_id(
             device_id, latest_entry_id, last_status=final_status,
             last_reading_time=latest_reading_time.isoformat() if latest_reading_time else None
         )
+        if final_status == 'error' and last_send_error:
+            local_device_store.update_device_fields(device_id, {'last_error': last_send_error})
         
         # Increment stats locally
         local_device_store.increment_device_stats(device_id, fetch_success=True, send_success=success_count > 0)
