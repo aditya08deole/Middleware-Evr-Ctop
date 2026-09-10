@@ -5,14 +5,23 @@ from dotenv import load_dotenv
 # Load environment variables FIRST before any other imports
 load_dotenv()
 
-from flask import Flask, render_template, redirect, jsonify, request
+from flask import Flask, render_template, redirect, jsonify, request, Response
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from models import db
 from routes import device_bp, data_bp, auth_bp, analytics_bp, settings_bp
 from utils import init_scheduler
+from utils.logging_config import configure_logging
 from config import config
+
+# Configure logging before anything else runs a query against the root
+# logger. logging.basicConfig() is a no-op after its first call in a
+# process, and several modules imported below (via `routes`/`utils`) call
+# their own basicConfig() — configure_logging() uses force=True so it wins
+# that race regardless of import order, giving LOG_FORMAT=json a
+# guaranteed effect.
+configure_logging()
 
 def create_app(config_name='default'):
     """Application factory"""
@@ -63,26 +72,35 @@ def create_app(config_name='default'):
     app.register_blueprint(analytics_bp)
     app.register_blueprint(settings_bp)
     
-    # Initialize the scheduler for this process. This app runs a live
-    # BackgroundScheduler and persistent EMQX MQTT clients, so app.run() below
-    # is called with use_reloader=False — there is only ever one process, so
-    # no reloader-related dedup guard is needed here.
-    #
-    # NOTE: in production this module is imported once per Gunicorn worker.
-    # If multiple workers are configured, each one starts its own scheduler
-    # against the same local SQLite mirror — that's a pre-existing condition,
-    # not addressed here.
-    init_scheduler(app)
-
-    # 2. PERFORM STARTUP SYNC: Pull master data from Firebase into Local Mirror
+    # 1. PERFORM STARTUP SYNC: Pull master data from Firebase into Local Mirror
+    # — must happen BEFORE init_scheduler() below. init_scheduler() calls
+    # device_cache.get_devices()/subscribes EMQX devices immediately; on a
+    # cold start with an empty local mirror, doing that first meant startup
+    # EMQX subscribe saw zero devices (self-healed within one scheduler tick
+    # via fetch_data()'s auto-subscribe fallback, but there's no reason to
+    # rely on that when a straight reorder avoids the gap entirely).
     from utils.local_device_store import local_device_store
     logger = app.logger
     logger.info("Performing startup sync from Firebase...")
     local_device_store.sync_from_firebase()
 
-    # 3. Ensure device cache is warmed up
+    # 2. Ensure device cache is warmed up
     from utils.device_cache import device_cache
     device_cache.get_devices()
+
+    # 3. Initialize the scheduler for this process. This app runs a live
+    # BackgroundScheduler and persistent EMQX MQTT clients, so app.run() below
+    # is called with use_reloader=False — there is only ever one process, so
+    # no reloader-related dedup guard is needed here.
+    #
+    # NOTE: in production this module is imported once per Gunicorn worker.
+    # Each worker calls init_scheduler() independently; both the Firestore
+    # scheduler (utils/scheduler_firestore.py) and the SQLite/legacy one
+    # (utils/scheduler.py) guard against this with a non-blocking fcntl
+    # lock, so only the first worker to start actually runs the
+    # scheduler/EMQX clients — the rest skip it (see
+    # _acquire_scheduler_ownership() in either module).
+    init_scheduler(app)
     
     # Routes
     @app.route('/')
@@ -271,7 +289,93 @@ def create_app(config_name='default'):
             })
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
-    
+
+    @app.route('/metrics')
+    def prometheus_metrics():
+        """
+        Prometheus-format metrics — read-only, computed entirely from
+        telemetry this app already tracks (local_device_store, memory_logger,
+        EMQXService.get_status()). Adds no new instrumentation anywhere else;
+        this just exposes existing counters in a format a Prometheus scraper
+        can consume.
+
+        NOTE: like /api/diagnostics, this reads from local_device_store,
+        which is only populated in USE_FIREBASE=true deployments (the
+        Firestore-mirror cache). In pure-SQLite mode this reports zero
+        devices — a pre-existing limitation shared with /api/diagnostics,
+        not something new to this endpoint.
+        """
+        from utils.local_device_store import local_device_store
+        from utils.memory_logger import memory_logger
+
+        lines = []
+
+        def emit(name, help_text, metric_type, samples):
+            lines.append(f'# HELP {name} {help_text}')
+            lines.append(f'# TYPE {name} {metric_type}')
+            for labels, value in samples:
+                if labels:
+                    label_str = ','.join(f'{k}="{v}"' for k, v in labels.items())
+                    lines.append(f'{name}{{{label_str}}} {value}')
+                else:
+                    lines.append(f'{name} {value}')
+
+        devices = local_device_store.get_devices(active_only=False)
+        telemetry = local_device_store.get_telemetry()
+        log_stats = memory_logger.get_stats()
+
+        emit('ctop_devices_total', 'Total number of configured devices', 'gauge',
+             [({}, len(devices))])
+        emit('ctop_devices_active', 'Number of devices with is_active=true', 'gauge',
+             [({}, sum(1 for d in devices if d.get('is_active', True)))])
+        emit('ctop_devices_needs_attention', 'Number of devices flagged needs_attention', 'gauge',
+             [({}, sum(1 for d in devices if d.get('needs_attention')))])
+
+        status_counts = {}
+        for d in devices:
+            status = d.get('last_status') or 'unknown'
+            status_counts[status] = status_counts.get(status, 0) + 1
+        emit('ctop_devices_by_status', 'Number of devices in each last_status value', 'gauge',
+             [({'status': status}, count) for status, count in status_counts.items()])
+
+        emit('ctop_device_fetches_total', 'Total fetch attempts per device', 'counter',
+             [({'device_id': d.get('id'), 'device_name': d.get('name')}, d.get('total_fetches', 0)) for d in devices])
+        emit('ctop_device_send_success_total', 'Total successful CTOP sends per device', 'counter',
+             [({'device_id': d.get('id'), 'device_name': d.get('name')}, d.get('successful_sends', 0)) for d in devices])
+        emit('ctop_device_send_failed_total', 'Total failed CTOP sends per device', 'counter',
+             [({'device_id': d.get('id'), 'device_name': d.get('name')}, d.get('failed_sends', 0)) for d in devices])
+        emit('ctop_device_consecutive_failures', 'Current consecutive CTOP failure streak per device', 'gauge',
+             [({'device_id': d.get('id'), 'device_name': d.get('name')}, d.get('consecutive_failures', 0)) for d in devices])
+
+        # EMQX connection state — whichever scheduler backend is active owns
+        # the real EMQXService singleton (see routes/device_routes.py's
+        # _get_emqx_service() for why this specific import form is required).
+        emqx_status = None
+        try:
+            if os.environ.get('USE_FIREBASE', 'false').lower() == 'true':
+                from utils.scheduler_firestore import emqx_service
+            else:
+                from utils.scheduler import emqx_service
+            if emqx_service is not None:
+                emqx_status = emqx_service.get_status()
+        except Exception:
+            emqx_status = None
+
+        if emqx_status:
+            emit('ctop_emqx_connections_active', 'EMQX devices with a broker-acknowledged connection', 'gauge',
+                 [({}, len(emqx_status.get('connected_devices', [])))])
+            emit('ctop_emqx_connections_pending', 'EMQX devices with a client started but not yet connected', 'gauge',
+                 [({}, len(emqx_status.get('pending_devices', [])))])
+
+        emit('ctop_local_store_flush_errors', 'Consecutive local device-store flush errors', 'gauge',
+             [({}, telemetry.get('consecutive_flush_errors', 0))])
+        emit('ctop_logs_total', 'Total in-memory log entries', 'gauge',
+             [({}, log_stats.get('total_logs', 0))])
+        emit('ctop_logs_error_total', 'Total in-memory error log entries', 'gauge',
+             [({}, log_stats.get('error_logs', 0))])
+
+        return Response('\n'.join(lines) + '\n', mimetype='text/plain; version=0.0.4; charset=utf-8')
+
     return app
 
 

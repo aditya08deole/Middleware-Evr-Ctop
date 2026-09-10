@@ -45,11 +45,20 @@ class Device(db.Model):
     emqx_password = db.Column(db.String(255), nullable=True)
     emqx_topic = db.Column(db.String(255), nullable=True)
     emqx_use_tls = db.Column(db.Boolean, default=False)
-    
+    emqx_qos = db.Column(db.Integer, default=1)
+    emqx_ca_cert_path = db.Column(db.String(500), nullable=True)
+    emqx_tls_insecure = db.Column(db.Boolean, default=False)
+
     # Status tracking
     is_active = db.Column(db.Boolean, default=True)
     last_sync_time = db.Column(db.DateTime, nullable=True)
     last_status = db.Column(db.String(20), default='pending')  # pending, success, error
+    last_error = db.Column(db.Text, nullable=True)
+
+    # CTOP delivery health tracking — see process_device() in utils/scheduler.py
+    consecutive_failures = db.Column(db.Integer, default=0)
+    needs_attention = db.Column(db.Boolean, default=False)
+    last_ctop_attempt_time = db.Column(db.DateTime, nullable=True)
     
     # Metadata
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -72,6 +81,9 @@ class Device(db.Model):
             'emqx_username': self.emqx_username,
             'emqx_topic': self.emqx_topic,
             'emqx_use_tls': self.emqx_use_tls,
+            'emqx_qos': self.emqx_qos,
+            'emqx_ca_cert_path': self.emqx_ca_cert_path,
+            'emqx_tls_insecure': self.emqx_tls_insecure,
             # SECURITY: api_key, auth_token, emqx_password intentionally excluded from public API responses
             'ctop_url_1': self.ctop_url_1,
             'ctop_url_2': self.ctop_url_2,
@@ -89,6 +101,10 @@ class Device(db.Model):
             'is_active': self.is_active,
             'last_sync_time': self.last_sync_time.isoformat() if self.last_sync_time else None,
             'last_status': self.last_status,
+            'last_error': self.last_error,
+            'consecutive_failures': self.consecutive_failures,
+            'needs_attention': self.needs_attention,
+            'last_ctop_attempt_time': self.last_ctop_attempt_time.isoformat() if self.last_ctop_attempt_time else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

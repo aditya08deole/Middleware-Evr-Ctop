@@ -98,6 +98,23 @@ function togglePlatformFields() {
     }
 }
 
+// Toggle TLS-only EMQX fields (CA cert path, insecure checkbox) and
+// auto-switch the port between the plaintext/TLS MQTT defaults — but only
+// when the port still holds one of those two known defaults, so a custom
+// port the user already typed is never silently overwritten.
+function toggleEmqxTlsFieldsMulti() {
+    const useTls = document.getElementById('emqx-use-tls').checked;
+    document.getElementById('emqx-tls-fields-multi').style.display = useTls ? 'block' : 'none';
+
+    const portInput = document.getElementById('emqx-port');
+    const currentPort = portInput.value;
+    if (useTls && currentPort === '1883') {
+        portInput.value = '8883';
+    } else if (!useTls && currentPort === '8883') {
+        portInput.value = '1883';
+    }
+}
+
 function nextStep() {
     if (!validateStep(currentStep)) {
         return;
@@ -344,10 +361,14 @@ function saveStepData(step) {
             // Set placeholder values for ThingSpeak fields (backend expects them)
             formData.channel_id = formData.channel_id || 'emqx';
             formData.api_key = formData.api_key || 'not_used_emqx';
-            // Convert port to integer
+            // Convert port/QoS to integers
             if (formData.emqx_port) {
                 formData.emqx_port = parseInt(formData.emqx_port);
             }
+            formData.emqx_qos = parseInt(formData.emqx_qos) || 1;
+            formData.emqx_ca_cert_path = formData.emqx_ca_cert_path || null;
+            // emqx_tls_insecure only means anything alongside TLS itself
+            formData.emqx_tls_insecure = formData.emqx_use_tls ? !!formData.emqx_tls_insecure : false;
         }
     }
 }
@@ -388,7 +409,8 @@ function populateReview() {
             { label: 'Username', value: formData.emqx_username || 'None' },
             { label: 'Password', value: formData.emqx_password ? '••••••••••••' : 'None' },
             { label: 'MQTT Topic', value: formData.emqx_topic || 'Not provided' },
-            { label: 'TLS/SSL', value: formData.emqx_use_tls ? 'Enabled' : 'Disabled' },
+            { label: 'QoS', value: formData.emqx_qos || '1' },
+            { label: 'TLS/SSL', value: formData.emqx_use_tls ? (formData.emqx_tls_insecure ? 'Enabled (cert verification skipped)' : 'Enabled') : 'Disabled' },
         );
     } else {
         reviewItems.push(
@@ -466,7 +488,7 @@ async function testConnection() {
 // processing throws on the very first reading.
 function coerceNumericFields(data) {
     const floatFields = ['tank_height', 'latitude', 'longitude'];
-    const intFields = ['filter_window', 'emqx_port'];
+    const intFields = ['filter_window', 'emqx_port', 'emqx_qos'];
 
     floatFields.forEach(field => {
         if (data[field] !== undefined && data[field] !== null && data[field] !== '') {

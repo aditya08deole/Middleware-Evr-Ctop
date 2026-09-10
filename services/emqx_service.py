@@ -44,6 +44,13 @@ class EMQXService:
         self._clients = {}
         self._clients_lock = threading.Lock()
 
+        # Real broker-acknowledged connection state: {device_id: bool}.
+        # Set True only inside on_connect when the broker returns rc==0,
+        # and False on disconnect/failed connect — NOT merely when a
+        # client object exists in self._clients (which is true the instant
+        # connect_async() is called, long before the broker responds).
+        self._connection_state = {}
+
         # Per-device stable field-slot schema for named-key MQTT payloads:
         # {device_id: [key_name_for_field1, key_name_for_field2, ...]}.
         # Established from the first message and only ever appended to, so a
@@ -75,18 +82,37 @@ class EMQXService:
         password = device_data.get('emqx_password')
         topic = device_data.get('emqx_topic')
         use_tls = device_data.get('emqx_use_tls', False)
+        tls_insecure = device_data.get('emqx_tls_insecure', False)
+        ca_cert_path = device_data.get('emqx_ca_cert_path') or None
+
+        try:
+            qos = int(device_data.get('emqx_qos', 1))
+        except (ValueError, TypeError):
+            qos = 1
+        if qos not in (0, 1, 2):
+            qos = 1
 
         if not broker_url or not topic:
             logger.error(f"[EMQX] Device {device_id}: Missing broker_url or topic")
             return False
 
-        # Decrypt credentials if using Firebase
-        if self.use_firebase and password:
+        # Decrypt credentials. The add/update device routes encrypt
+        # emqx_password unconditionally regardless of USE_FIREBASE, so
+        # decryption must not be gated on that flag either — previously
+        # this only ran when USE_FIREBASE=true, which meant every non-
+        # Firebase deployment sent the raw Fernet ciphertext as the MQTT
+        # password and every broker login failed. Fall back to the raw
+        # value if it isn't actually encrypted (e.g. legacy plaintext
+        # devices seeded before encryption was added).
+        if password:
             try:
-                password = self.encryption_service.decrypt(password)
+                encryption_service = getattr(self, 'encryption_service', None)
+                if encryption_service is None:
+                    from utils.encryption import get_encryption_service
+                    encryption_service = get_encryption_service()
+                password = encryption_service.decrypt(password)
             except Exception as e:
-                logger.error(f"[EMQX] Device {device_id}: Failed to decrypt password: {e}")
-                return False
+                logger.debug(f"[EMQX] Device {device_id}: Password not decryptable, using as-is: {e}")
 
         # Unsubscribe existing client if any
         self.unsubscribe_device(device_id)
@@ -106,19 +132,53 @@ class EMQXService:
             if username:
                 client.username_pw_set(username, password)
 
-            # Enable TLS if configured
+            # Enable TLS if configured. A CA cert path lets this connect to
+            # self-hosted EMQX (Community Edition brokers almost always run
+            # with a self-signed cert out of the box, which fails default
+            # system-CA verification with no way to configure it before).
+            # emqx_tls_insecure is an explicit opt-out of verification for
+            # lab/dev brokers only — never the default.
             if use_tls:
-                client.tls_set()
+                import ssl
+                cert_reqs = ssl.CERT_NONE if tls_insecure else ssl.CERT_REQUIRED
+                if ca_cert_path:
+                    client.tls_set(ca_certs=ca_cert_path, cert_reqs=cert_reqs)
+                else:
+                    client.tls_set(cert_reqs=cert_reqs)
+                if tls_insecure:
+                    client.tls_insecure_set(True)
+
+            # Last Will and Testament: lets the broker (and anything else
+            # subscribed to this topic) know immediately if this client
+            # drops off uncleanly, instead of relying only on the 30-minute
+            # staleness heuristic in the scheduler.
+            client.will_set(f"ctop/{device_id}/status", payload="offline", qos=1, retain=True)
 
             # Set callbacks (using closures to capture device_id)
             def on_connect(client, userdata, flags, rc, properties=None):
                 rc_val = rc if isinstance(rc, int) else rc.value
+                dev_id = str(device_id)
                 if rc_val == 0:
+                    with self._clients_lock:
+                        self._connection_state[dev_id] = True
                     logger.info(f"[EMQX] Device {device_name} ({device_id}): Connected to {broker_url}:{port}")
-                    client.subscribe(topic, qos=1)
-                    logger.info(f"[EMQX] Device {device_name} ({device_id}): Subscribed to topic '{topic}'")
+                    client.subscribe(topic, qos=qos)
+                    logger.info(f"[EMQX] Device {device_name} ({device_id}): Subscribed to topic '{topic}' (QoS {qos})")
                 else:
+                    with self._clients_lock:
+                        self._connection_state[dev_id] = False
                     logger.error(f"[EMQX] Device {device_name} ({device_id}): Connection failed, rc={rc_val}")
+
+            def on_subscribe(client, userdata, mid, reason_codes, properties=None):
+                codes = reason_codes if isinstance(reason_codes, list) else [reason_codes]
+                failed = [c for c in codes if (c if isinstance(c, int) else getattr(c, 'value', 1)) >= 128]
+                if failed:
+                    logger.error(
+                        f"[EMQX] Device {device_name} ({device_id}): "
+                        f"Broker rejected subscription to '{topic}' (reason codes: {codes})"
+                    )
+                else:
+                    logger.debug(f"[EMQX] Device {device_name} ({device_id}): Subscription acknowledged (granted: {codes})")
 
             def on_message(client, userdata, msg):
                 try:
@@ -158,6 +218,8 @@ class EMQXService:
 
             def on_disconnect(client, userdata, flags, rc, properties=None):
                 rc_val = rc if isinstance(rc, int) else rc.value
+                with self._clients_lock:
+                    self._connection_state[str(device_id)] = False
                 if rc_val != 0:
                     logger.warning(
                         f"[EMQX] Device {device_name} ({device_id}): "
@@ -167,6 +229,7 @@ class EMQXService:
             client.on_connect = on_connect
             client.on_message = on_message
             client.on_disconnect = on_disconnect
+            client.on_subscribe = on_subscribe
 
             # Enable auto-reconnect
             client.reconnect_delay_set(
@@ -174,12 +237,26 @@ class EMQXService:
                 max_delay=Config.EMQX_RECONNECT_DELAY * 10
             )
 
-            # Connect (non-blocking)
-            client.connect_async(broker_url, int(port), keepalive=Config.EMQX_KEEPALIVE)
-            client.loop_start()  # Starts background network thread
-
+            # Register the client BEFORE starting the network thread. loop_start()
+            # can invoke on_connect from a background thread almost immediately
+            # (e.g. a local broker) — registering after connect_async()/loop_start()
+            # would let that callback's True state get clobbered back to False by
+            # this same dict write racing behind it.
             with self._clients_lock:
                 self._clients[str(device_id)] = client
+                self._connection_state[str(device_id)] = False
+
+            try:
+                # Connect (non-blocking)
+                client.connect_async(broker_url, int(port), keepalive=Config.EMQX_KEEPALIVE)
+                client.loop_start()  # Starts background network thread
+            except Exception:
+                # Undo the registration above so a failed connect_async/loop_start
+                # doesn't leave a dangling client that never actually started.
+                with self._clients_lock:
+                    self._clients.pop(str(device_id), None)
+                    self._connection_state.pop(str(device_id), None)
+                raise
 
             logger.info(
                 f"[EMQX] Device {device_name} ({device_id}): "
@@ -196,17 +273,32 @@ class EMQXService:
         Fire process_device_safe() in a background thread right after a
         message is buffered, so it reaches CTOP immediately instead of
         waiting for the next periodic scheduler tick. Deferred import avoids
-        a circular import (scheduler_firestore imports EMQXService).
+        a circular import (scheduler_firestore/scheduler import EMQXService).
         process_device_safe() itself is a no-op if that device is already
         being processed, so bursts of messages don't pile up duplicate runs.
+
+        Routes to whichever scheduler backend is actually active
+        (USE_FIREBASE) — this same EMQXService singleton is shared by both
+        utils/scheduler_firestore.py and utils/scheduler.py, and calling the
+        wrong one's process_device_safe() would either look up a device that
+        was never synced into its store, or hit db.session with no Flask
+        app context pushed.
         """
         def _run():
             try:
-                from utils.scheduler_firestore import process_device_safe
-                from utils.local_device_store import local_device_store
-                device_data = local_device_store.get_device_by_id(str(device_id))
-                if device_data:
-                    process_device_safe(str(device_id), device_data)
+                use_firebase = os.environ.get('USE_FIREBASE', 'false').lower() == 'true'
+                if use_firebase:
+                    from utils.scheduler_firestore import process_device_safe
+                    from utils.local_device_store import local_device_store
+                    device_data = local_device_store.get_device_by_id(str(device_id))
+                    if device_data:
+                        process_device_safe(str(device_id), device_data)
+                else:
+                    # Legacy SQLite/SQLAlchemy stack: process_device_safe()
+                    # takes just the device_id — it looks up the Device row
+                    # itself and pushes its own Flask app context.
+                    from utils.scheduler import process_device_safe
+                    process_device_safe(str(device_id))
             except Exception as e:
                 logger.error(f"[EMQX] Instant-process trigger failed for {device_name} ({device_id}): {e}")
 
@@ -223,7 +315,8 @@ class EMQXService:
         
         with self._clients_lock:
             client = self._clients.pop(device_id_str, None)
-        
+            self._connection_state.pop(device_id_str, None)
+
         if client:
             try:
                 client.loop_stop()
@@ -427,22 +520,38 @@ class EMQXService:
         if emqx_count > 0:
             logger.info(f"[EMQX] Subscribed to {emqx_count} EMQX device(s) at startup")
 
+    def is_connected(self, device_id):
+        """True only if the broker has actually acknowledged this device's
+        connection (on_connect fired with rc==0) — not merely that a client
+        object exists (true the instant subscribe_device() is called, well
+        before the network round-trip completes)."""
+        with self._clients_lock:
+            return bool(self._connection_state.get(str(device_id)))
+
     def get_status(self):
         """
         Get status summary of all MQTT connections.
-        
+
+        'connected_devices' reflects broker-acknowledged connections only;
+        'pending_devices' are clients that were started but haven't (yet,
+        or ever) received a successful CONNACK — e.g. bad credentials, wrong
+        broker URL, or still mid-handshake.
+
         Returns:
             dict: Status info for all tracked devices
         """
         with self._clients_lock:
             active_clients = list(self._clients.keys())
-        
+            connected = [d for d in active_clients if self._connection_state.get(d)]
+            pending = [d for d in active_clients if not self._connection_state.get(d)]
+
         with self._buffer_lock:
             buffer_sizes = {k: len(v) for k, v in self._message_buffers.items() if not k.startswith('_pending_')}
 
         return {
             'active_connections': len(active_clients),
-            'connected_devices': active_clients,
+            'connected_devices': connected,
+            'pending_devices': pending,
             'buffer_sizes': buffer_sizes
         }
 

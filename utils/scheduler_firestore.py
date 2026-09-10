@@ -7,11 +7,35 @@ import os
 import threading
 from firebase.firestore_service import FirestoreService
 from services import ThingSpeakService, PreprocessService, CTOPService, EMQXService
+from utils.reading_history import reading_history_store
 from config import Config
 import concurrent.futures
 
 # A device is considered INACTIVE if its latest data point is older than this
 STALENESS_THRESHOLD_MINUTES = 30
+
+# CTOP delivery health tracking (see process_device() Step 5). A device that
+# fails to deliver to CTOP CTOP_ATTENTION_THRESHOLD times in a row is
+# flagged needs_attention so it's visible in the UI instead of only in
+# logs. Once failures pile up further, backoff kicks in so a dead/
+# misconfigured CTOP endpoint isn't hammered every 15-second tick forever —
+# a handful of failures could just be a transient blip, so backoff only
+# engages once failures have genuinely piled up.
+CTOP_ATTENTION_THRESHOLD = 5
+CTOP_BACKOFF_LEVEL_1 = 5
+CTOP_BACKOFF_LEVEL_1_SECONDS = 60
+CTOP_BACKOFF_LEVEL_2 = 20
+CTOP_BACKOFF_LEVEL_2_SECONDS = 300
+
+
+def _ctop_backoff_seconds(consecutive_failures):
+    """Seconds to wait between CTOP send attempts for a device with this
+    many consecutive failures. 0 means no backoff — retry every tick."""
+    if consecutive_failures >= CTOP_BACKOFF_LEVEL_2:
+        return CTOP_BACKOFF_LEVEL_2_SECONDS
+    if consecutive_failures >= CTOP_BACKOFF_LEVEL_1:
+        return CTOP_BACKOFF_LEVEL_1_SECONDS
+    return 0
 
 # Per-device locks so an EMQX instant-trigger (fired the moment an MQTT message
 # arrives) can never run process_device() concurrently with the periodic
@@ -120,6 +144,24 @@ def process_device(device_id, device_data):
             #     ThingSpeak genuinely has zero feeds on the channel.
             #   - EMQX: fetch_data() returns feeds=[] whenever no MQTT message
             #     landed in the buffer since the last poll — normal, not stale.
+            # EMQX-specific fast path: if our subscriber client isn't even
+            # connected to the broker right now (bad credentials, network
+            # drop, broker restart), that's a much stronger and more
+            # immediate signal than "no message arrived this tick" — don't
+            # wait out the up-to-30-minute staleness fallback below to
+            # infer the same thing indirectly from a message gap.
+            if data_source == 'emqx' and not emqx_service.is_connected(device_id):
+                logger.warning(
+                    f"Device {device_data.get('name')}: EMQX client not connected to broker "
+                    f"— marking inactive immediately instead of waiting for staleness."
+                )
+                local_device_store.update_device_fields(device_id, {
+                    'last_status': 'inactive',
+                    'last_error': 'MQTT client is not connected to the broker',
+                    'last_sync_time': now_utc.isoformat()
+                })
+                return
+
             # Fall back to the device's own last known reading time (persisted
             # whenever we did see a fresh entry) and only mark INACTIVE if THAT
             # is stale/missing.
@@ -218,7 +260,13 @@ def process_device(device_id, device_data):
             new_processed_data.append(entry)
             if i < len(transformed_data):
                 new_transformed_data.append(transformed_data[i])
-                
+
+        # Record sensor-value history for the dashboard's trend sparkline.
+        # Independent of CTOP delivery outcome below — this reflects what
+        # the sensor reported, not whether it was successfully relayed.
+        for entry, payload in zip(new_processed_data, new_transformed_data):
+            reading_history_store.record(device_id, entry.get('entry_id'), entry.get('LCT'), payload)
+
         if not new_transformed_data:
             # Silently skip if there's no new data (to prevent terminal spam every 15s).
             #
@@ -240,7 +288,33 @@ def process_device(device_id, device_data):
             })
             return
             
-        # Step 5: Send to CTOP endpoints
+        # Step 5: Send to CTOP endpoints — unless this device is in a backoff
+        # cooldown after repeated failures. New data isn't lost by skipping:
+        # entry_id isn't advanced below, and for EMQX the drained buffer is
+        # rolled back, so the same reading is retried on the next eligible tick.
+        consecutive_failures = int(device_data.get('consecutive_failures') or 0)
+        backoff_seconds = _ctop_backoff_seconds(consecutive_failures)
+        now = datetime.now(timezone.utc)
+
+        if backoff_seconds:
+            last_attempt = None
+            last_attempt_str = device_data.get('last_ctop_attempt_time')
+            if last_attempt_str:
+                try:
+                    last_attempt = datetime.fromisoformat(str(last_attempt_str).replace('Z', '+00:00'))
+                except (ValueError, TypeError):
+                    last_attempt = None
+
+            if last_attempt and (now - last_attempt).total_seconds() < backoff_seconds:
+                logger.debug(
+                    f"Device {device_data.get('name')}: CTOP backoff active "
+                    f"({consecutive_failures} consecutive failures) — skipping send this tick."
+                )
+                if data_source == 'emqx':
+                    emqx_service.rollback_fetch(device_id)
+                local_device_store.update_device_fields(device_id, {'last_sync_time': now.isoformat()})
+                return
+
         success_count = 0
         last_send_error = None
         latest_entry_id = str(last_entry_id)
@@ -256,6 +330,23 @@ def process_device(device_id, device_data):
                 last_send_error = results.get('error')
 
         logger.info(f"Sent {success_count}/{len(new_transformed_data)} NEW payloads to CTOP for device {device_data.get('name')}")
+
+        # Track the consecutive-failure streak that the backoff check above
+        # and the needs_attention UI flag both depend on.
+        new_consecutive_failures = 0 if success_count > 0 else consecutive_failures + 1
+        needs_attention = new_consecutive_failures >= CTOP_ATTENTION_THRESHOLD
+        local_device_store.update_device_fields(device_id, {
+            'consecutive_failures': new_consecutive_failures,
+            'needs_attention': needs_attention,
+            'last_ctop_attempt_time': now.isoformat()
+        })
+        if needs_attention and new_consecutive_failures == CTOP_ATTENTION_THRESHOLD:
+            # Log once, right when the threshold is first crossed — not on
+            # every subsequent failed tick while it stays flagged.
+            logger.warning(
+                f"Device {device_data.get('name')} ({device_id}): {new_consecutive_failures} "
+                f"consecutive CTOP send failures — flagged needs_attention."
+            )
 
         # Update local mirror (entry_id, status, sync_time, reading_time).
         # update_entry_id() has no last_error parameter, so the actual CTOP

@@ -1,0 +1,5 @@
+# Development/CI-only tooling — not needed at runtime, so kept separate
+# from requirements.txt (which Docker installs into the production image).
+ruff==0.6.9
+black==24.10.0
+pip-audit==2.7.3

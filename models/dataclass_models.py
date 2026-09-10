@@ -38,7 +38,21 @@ class DeviceModel:
     emqx_password: Optional[str] = None
     emqx_topic: Optional[str] = None
     emqx_use_tls: bool = False
-    
+    emqx_qos: int = 1
+    emqx_ca_cert_path: Optional[str] = None
+    emqx_tls_insecure: bool = False
+
+    # CTOP delivery health tracking (see utils/scheduler_firestore.py /
+    # utils/scheduler.py process_device()): consecutive_failures counts
+    # back-to-back failed CTOP send attempts, resetting to 0 on any
+    # success. needs_attention flips true once that streak crosses a
+    # threshold, so a chronically-failing device is visible in the UI
+    # instead of only in logs. last_ctop_attempt_time gates the backoff
+    # schedule that stops hammering a dead CTOP endpoint every tick.
+    consecutive_failures: int = 0
+    needs_attention: bool = False
+    last_ctop_attempt_time: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return {
@@ -69,6 +83,12 @@ class DeviceModel:
             'emqx_password': self.emqx_password,
             'emqx_topic': self.emqx_topic,
             'emqx_use_tls': self.emqx_use_tls,
+            'emqx_qos': self.emqx_qos,
+            'emqx_ca_cert_path': self.emqx_ca_cert_path,
+            'emqx_tls_insecure': self.emqx_tls_insecure,
+            'consecutive_failures': self.consecutive_failures,
+            'needs_attention': self.needs_attention,
+            'last_ctop_attempt_time': self.last_ctop_attempt_time,
         }
     
     @classmethod
@@ -102,6 +122,12 @@ class DeviceModel:
             emqx_password=data.get('emqx_password'),
             emqx_topic=data.get('emqx_topic'),
             emqx_use_tls=data.get('emqx_use_tls', False),
+            emqx_qos=data.get('emqx_qos', 1),
+            emqx_ca_cert_path=data.get('emqx_ca_cert_path'),
+            emqx_tls_insecure=data.get('emqx_tls_insecure', False),
+            consecutive_failures=data.get('consecutive_failures', 0),
+            needs_attention=data.get('needs_attention', False),
+            last_ctop_attempt_time=data.get('last_ctop_attempt_time'),
         )
 
 @dataclass

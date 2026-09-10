@@ -57,9 +57,15 @@ def fetch_all_devices():
             for device in devices:
                 try:
                     if getattr(device, 'data_source', 'thingspeak') == 'emqx':
-                        from services import EMQXService
-                        emqx_svc = EMQXService()
-                        success, raw_data, error = emqx_svc.fetch_data(device.id)
+                        # Use the real EMQXService singleton (owns the actual
+                        # MQTT client/message buffers) instead of a fresh
+                        # EMQXService() — a throwaway instance has no clients
+                        # or buffers of its own, so fetch_data() could never
+                        # see any data a live MQTT subscription had received.
+                        from utils.scheduler_firestore import emqx_service
+                        success, raw_data, error = emqx_service.fetch_data(
+                            device.id, device.to_dict_with_credentials()
+                        )
                     else:
                         success, raw_data, error = thingspeak_service.fetch_data(device.id)
                     results[str(device.id)] = {

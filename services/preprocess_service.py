@@ -1,17 +1,36 @@
 import json
 import re
+import threading
+from collections import deque
 from datetime import datetime
 from models import db, Device, Log, ProcessedData
 from typing import Dict, List, Any, Optional
 
 class PreprocessService:
     """Service for preprocessing and transforming ThingSpeak data"""
-    
+
     def __init__(self):
         # Default field mappings for unknown device types (field1-8 → fieldN passthrough)
         self.field_mappings = {
             f'field{i}': f'field{i}' for i in range(1, 9)
         }
+
+        # Per-(device_id, field_key) rolling history of raw values, used by
+        # _apply_streaming_filter for median/average smoothing that persists
+        # across calls. A single preprocess_data() call almost always sees
+        # just one new reading (ThingSpeak fetches results=1; EMQX delivers
+        # ~1 buffered message per instant-trigger), so filtering computed
+        # only from that call's own feeds always collapsed the configured
+        # window down to 1 — i.e. the configured filter had no smoothing
+        # effect at all in the common case. This service instance is a
+        # long-lived singleton (one per process, reused every scheduler
+        # tick), so keeping history here lets the window actually span
+        # consecutive polls.
+        self._filter_history = {}
+        self._filter_history_lock = threading.Lock()
+        # Bound history length regardless of configured filter_window so a
+        # large/misconfigured window can't grow memory unbounded per device.
+        self._MAX_FILTER_HISTORY = 50
     
     def preprocess_data(self, device_id, raw_data, device_data=None):
         """
@@ -43,15 +62,15 @@ class PreprocessService:
         try:
             # Handle device type specific preprocessing
             if device.device_type == 'EvaraTank':
-                processed_entries = self._preprocess_evaratank(device, raw_data['feeds'])
+                processed_entries = self._preprocess_evaratank(device_id, device, raw_data['feeds'])
             elif device.device_type == 'EvaraFlow':
-                processed_entries = self._preprocess_evaraflow(device, raw_data['feeds'])
+                processed_entries = self._preprocess_evaraflow(device_id, device, raw_data['feeds'])
             elif device.device_type == 'EvaraValve':
-                processed_entries = self._preprocess_evaravalve(device, raw_data['feeds'])
+                processed_entries = self._preprocess_evaravalve(device_id, device, raw_data['feeds'])
             elif device.device_type == 'EvaraDeep':
-                processed_entries = self._preprocess_evaradeep(device, raw_data['feeds'])
+                processed_entries = self._preprocess_evaradeep(device_id, device, raw_data['feeds'])
             elif device.device_type == 'EvaraTDS':
-                processed_entries = self._preprocess_evaratds(device, raw_data['feeds'])
+                processed_entries = self._preprocess_evaratds(device_id, device, raw_data['feeds'])
             else:
                 # Default passthrough preprocessing for unrecognized device types
                 logger = self._get_logger()
@@ -122,7 +141,7 @@ class PreprocessService:
         
         return processed
     
-    def _preprocess_evaratank(self, device, feeds):
+    def _preprocess_evaratank(self, device_id, device, feeds):
         """
         Preprocess EvaraTank specific data with temperature compensation and filtering
         
@@ -165,15 +184,18 @@ class PreprocessService:
         if not feed_entries:
             return processed_entries
 
-        # Apply filtering if configured
-        if device.filtering_method == 'median':
-            window = min(device.filter_window or 5, len(distance_values))
-            filtered_distances = self._apply_median_filter(distance_values, window)
-            filtered_temps = self._apply_median_filter(temp_values, window)
-        elif device.filtering_method == 'average':
-            window = min(device.filter_window or 5, len(distance_values))
-            filtered_distances = self._apply_average_filter(distance_values, window)
-            filtered_temps = self._apply_average_filter(temp_values, window)
+        # Apply filtering if configured. Uses a trailing window carried
+        # across calls (see _apply_streaming_filter) instead of a window
+        # confined to this call's own feeds, which would collapse to a
+        # no-op whenever only one new reading arrives (the common case).
+        if device.filtering_method in ('median', 'average'):
+            window = device.filter_window or 5
+            filtered_distances = self._apply_streaming_filter(
+                device_id, 'distance', distance_values, window, device.filtering_method
+            )
+            filtered_temps = self._apply_streaming_filter(
+                device_id, 'temperature', temp_values, window, device.filtering_method
+            )
         else:
             filtered_distances = distance_values
             filtered_temps = temp_values
@@ -225,7 +247,7 @@ class PreprocessService:
         
         return processed_entries
     
-    def _preprocess_evaraflow(self, device, feeds):
+    def _preprocess_evaraflow(self, device_id, device, feeds):
         """
         Preprocess EvaraFlow specific data with meter reading and flow rate
         
@@ -262,15 +284,16 @@ class PreprocessService:
         if not feed_entries:
             return processed_entries
         
-        # Apply filtering if configured
-        if device.filtering_method == 'median':
-            window = min(device.filter_window or 5, len(meter_values))
-            filtered_meters = self._apply_median_filter(meter_values, window)
-            filtered_flows = self._apply_median_filter(flow_rate_values, window)
-        elif device.filtering_method == 'average':
-            window = min(device.filter_window or 5, len(meter_values))
-            filtered_meters = self._apply_average_filter(meter_values, window)
-            filtered_flows = self._apply_average_filter(flow_rate_values, window)
+        # Apply filtering if configured (trailing window across calls — see
+        # _apply_streaming_filter).
+        if device.filtering_method in ('median', 'average'):
+            window = device.filter_window or 5
+            filtered_meters = self._apply_streaming_filter(
+                device_id, 'meter_reading', meter_values, window, device.filtering_method
+            )
+            filtered_flows = self._apply_streaming_filter(
+                device_id, 'flow_rate', flow_rate_values, window, device.filtering_method
+            )
         else:
             filtered_meters = meter_values
             filtered_flows = flow_rate_values
@@ -314,7 +337,7 @@ class PreprocessService:
 
         return processed_entries
 
-    def _preprocess_evaravalve(self, device, feeds):
+    def _preprocess_evaravalve(self, device_id, device, feeds):
         """
         Preprocess EvaraValve specific data with flow rate and liters
         
@@ -351,15 +374,16 @@ class PreprocessService:
         if not feed_entries:
             return processed_entries
         
-        # Apply filtering if configured
-        if device.filtering_method == 'median':
-            window = min(device.filter_window or 5, len(flow_rate_values))
-            filtered_flow_rates = self._apply_median_filter(flow_rate_values, window)
-            filtered_liters = self._apply_median_filter(liters_values, window)
-        elif device.filtering_method == 'average':
-            window = min(device.filter_window or 5, len(flow_rate_values))
-            filtered_flow_rates = self._apply_average_filter(flow_rate_values, window)
-            filtered_liters = self._apply_average_filter(liters_values, window)
+        # Apply filtering if configured (trailing window across calls — see
+        # _apply_streaming_filter).
+        if device.filtering_method in ('median', 'average'):
+            window = device.filter_window or 5
+            filtered_flow_rates = self._apply_streaming_filter(
+                device_id, 'flow_rate', flow_rate_values, window, device.filtering_method
+            )
+            filtered_liters = self._apply_streaming_filter(
+                device_id, 'liters', liters_values, window, device.filtering_method
+            )
         else:
             filtered_flow_rates = flow_rate_values
             filtered_liters = liters_values
@@ -401,7 +425,7 @@ class PreprocessService:
         
         return processed_entries
     
-    def _preprocess_evaradeep(self, device, feeds):
+    def _preprocess_evaradeep(self, device_id, device, feeds):
         """
         Preprocess EvaraDeep specific data with distance in cm
         
@@ -435,13 +459,13 @@ class PreprocessService:
         if not feed_entries:
             return processed_entries
         
-        # Apply filtering if configured
-        if device.filtering_method == 'median':
-            window = min(device.filter_window or 5, len(distance_values))
-            filtered_distances = self._apply_median_filter(distance_values, window)
-        elif device.filtering_method == 'average':
-            window = min(device.filter_window or 5, len(distance_values))
-            filtered_distances = self._apply_average_filter(distance_values, window)
+        # Apply filtering if configured (trailing window across calls — see
+        # _apply_streaming_filter).
+        if device.filtering_method in ('median', 'average'):
+            window = device.filter_window or 5
+            filtered_distances = self._apply_streaming_filter(
+                device_id, 'distance', distance_values, window, device.filtering_method
+            )
         else:
             filtered_distances = distance_values
         
@@ -470,7 +494,7 @@ class PreprocessService:
         
         return processed_entries
     
-    def _preprocess_evaratds(self, device, feeds):
+    def _preprocess_evaratds(self, device_id, device, feeds):
         """
         Preprocess EvaraTDS specific data with temperature and TDS in ppm
         
@@ -507,15 +531,16 @@ class PreprocessService:
         if not feed_entries:
             return processed_entries
         
-        # Apply filtering if configured
-        if device.filtering_method == 'median':
-            window = min(device.filter_window or 5, len(temperature_values))
-            filtered_temperatures = self._apply_median_filter(temperature_values, window)
-            filtered_tds = self._apply_median_filter(tds_values, window)
-        elif device.filtering_method == 'average':
-            window = min(device.filter_window or 5, len(temperature_values))
-            filtered_temperatures = self._apply_average_filter(temperature_values, window)
-            filtered_tds = self._apply_average_filter(tds_values, window)
+        # Apply filtering if configured (trailing window across calls — see
+        # _apply_streaming_filter).
+        if device.filtering_method in ('median', 'average'):
+            window = device.filter_window or 5
+            filtered_temperatures = self._apply_streaming_filter(
+                device_id, 'temperature', temperature_values, window, device.filtering_method
+            )
+            filtered_tds = self._apply_streaming_filter(
+                device_id, 'tds', tds_values, window, device.filtering_method
+            )
         else:
             filtered_temperatures = temperature_values
             filtered_tds = tds_values
@@ -617,15 +642,7 @@ class PreprocessService:
                 filtered.append(None)
                 continue
 
-            # Calculate median
-            if n % 2 == 1:
-                # Odd number of values: take middle value
-                median = window_values[n // 2]
-            else:
-                # Even number of values: take average of two middle values
-                median = (window_values[n // 2 - 1] + window_values[n // 2]) / 2
-
-            filtered.append(median)
+            filtered.append(self._median_of(window_values))
 
         return filtered
 
@@ -669,53 +686,75 @@ class PreprocessService:
                 filtered.append(None)
                 continue
 
-            # Calculate average (mean)
-            average = sum(window_values) / n
-            filtered.append(average)
+            filtered.append(self._average_of(window_values))
 
         return filtered
 
-    def _validate_filtering(self, original_values, filtered_values, window, method):
+    def _median_of(self, values):
+        """Median of a non-empty list of numbers."""
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+        if n % 2 == 1:
+            return sorted_vals[n // 2]
+        return (sorted_vals[n // 2 - 1] + sorted_vals[n // 2]) / 2
+
+    def _average_of(self, values):
+        """Arithmetic mean of a non-empty list of numbers."""
+        return sum(values) / len(values)
+
+    def _apply_streaming_filter(self, device_id, field_key, new_values, window, method):
         """
-        Validate that filtering was applied correctly
-        Logs validation results for debugging
+        Trailing-window median/average filter with state carried across
+        calls in self._filter_history, keyed by (device_id, field_key).
+
+        _apply_median_filter/_apply_average_filter above compute a centered
+        window purely from the values passed to a single call — correct for
+        a batch of historical feeds, but a no-op whenever a call only has
+        one new reading (window collapses to 1), which is the normal case
+        for both ThingSpeak (results=1 per fetch) and EMQX (~1 buffered
+        message per instant-trigger). This filters each new value against
+        up to `window` of its own most recent history instead, so the
+        configured filter actually smooths consecutive readings across
+        polls.
 
         Args:
-            original_values: Original unfiltered values
-            filtered_values: Filtered values
-            window: Window size used
-            method: Filtering method ('median' or 'average')
+            device_id: device identifier — part of the history key
+            field_key: name of the field this history belongs to (e.g.
+                'distance') — only needs to be unique within one device
+            new_values: values from this call, in chronological order (may
+                contain None for a missing reading)
+            window: configured filter window size
+            method: 'median' or 'average'
 
         Returns:
-            dict: Validation results
+            list: filtered values, same length/order as new_values
         """
-        logger = self._get_logger()
+        window = max(1, min(window, self._MAX_FILTER_HISTORY))
+        key = (str(device_id), field_key)
+        filtered = []
 
-        validation = {
-            'method': method,
-            'window_size': window,
-            'original_count': len(original_values),
-            'filtered_count': len(filtered_values),
-            'data_points_used': window,
-            'is_valid': True,
-            'details': []
-        }
+        with self._filter_history_lock:
+            history = self._filter_history.setdefault(
+                key, deque(maxlen=self._MAX_FILTER_HISTORY)
+            )
 
-        # Check that both lists have same length
-        if len(original_values) != len(filtered_values):
-            validation['is_valid'] = False
-            validation['details'].append(f"Length mismatch: {len(original_values)} vs {len(filtered_values)}")
+            for value in new_values:
+                if value is None:
+                    # Don't let a missing reading dilute the history with a
+                    # fabricated value — just pass the gap through.
+                    filtered.append(None)
+                    continue
 
-        # Check that filtered values are different (if filtering was applied)
-        if window > 1 and original_values != filtered_values:
-            validation['details'].append(f"Filtering applied: {method} with window {window}")
+                history.append(value)
+                window_values = list(history)[-window:]
 
-        # Log validation
-        logger.debug(f"FILTER VALIDATION [{method}]: {validation}")
+                if method == 'median':
+                    filtered.append(self._median_of(window_values))
+                else:
+                    filtered.append(self._average_of(window_values))
 
-        return validation
+        return filtered
 
-    
     def _convert_value(self, value):
         """Convert string value to appropriate type (float, int, or string).
         Returns the original string if it cannot be parsed as a number."""
@@ -782,9 +821,20 @@ class PreprocessService:
             
         if not device:
             return []
-        
+
+        known_device_types = {'EvaraTank', 'EvaraFlow', 'EvaraValve', 'EvaraDeep', 'EvaraTDS'}
+        if device.device_type not in known_device_types:
+            # Matches the equivalent warning in preprocess_data() for the
+            # same condition — previously this silently produced an empty
+            # {} payload per entry, sent to CTOP with nothing surfaced
+            # anywhere explaining why.
+            self._get_logger().warning(
+                f"Unknown device_type '{device.device_type}' for device {device_id} — "
+                f"transform_to_ctop_format() will emit empty payloads."
+            )
+
         transformed = []
-        
+
         for entry in processed_data:
             ctop_payload = {}
             

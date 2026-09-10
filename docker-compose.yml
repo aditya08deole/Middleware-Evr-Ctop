@@ -19,3 +19,20 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Optional reverse proxy — additive, doesn't change how `middleware` is
+  # reached on :8080 above. Gives you gzip + a single place to terminate
+  # TLS once you have real certificates (see nginx/nginx.conf). Not
+  # required to run the app; omit this service entirely if you don't want it.
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: evara-nginx
+    restart: always
+    depends_on:
+      - middleware
+    ports:
+      - "80:80"
+      # - "443:443"  # uncomment once TLS certs are mounted below
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # - ./nginx/certs:/etc/nginx/certs:ro

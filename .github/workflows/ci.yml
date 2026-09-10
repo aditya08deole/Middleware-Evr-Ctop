@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test suite
+        run: pytest tests/ -v
+
+  lint:
+    name: Lint (informational)
+    runs-on: ubuntu-latest
+    # Advisory only for now — the existing codebase predates this workflow
+    # and hasn't been formatted/linted to any single standard yet. Blocking
+    # merges on style before a baseline cleanup pass would fail on line one
+    # for reasons unrelated to correctness. Flip continue-on-error to false
+    # once the codebase has been brought up to a clean baseline.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install lint tools
+        run: pip install -r requirements-dev.txt
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: black --check
+        run: black --check .
+
+  security:
+    name: Dependency vulnerability scan (informational)
+    runs-on: ubuntu-latest
+    # Advisory only for now — surfaces known CVEs in pinned dependencies
+    # without blocking merges while a remediation/upgrade plan is worked
+    # out. Tighten to blocking once the team has a process for triaging
+    # findings quickly.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install pip-audit
+        run: pip install -r requirements-dev.txt
+
+      - name: pip-audit
+        run: pip-audit -r requirements.txt

@@ -51,6 +51,29 @@ def get_device(device_id):
         'data': device
     })
 
+@device_bp.route('/<device_id>/history', methods=['GET'])
+@handle_errors
+def get_device_history(device_id):
+    """
+    Recent sensor-reading history for this device's trend sparkline
+    (device_detail.html). Backed by an in-memory-only rolling buffer (see
+    utils/reading_history.py) — not persisted, resets on process restart,
+    refills as new readings arrive. Not a substitute for real historical
+    analytics; it exists purely to answer "is this trending up or down"
+    at a glance.
+    """
+    device = local_device_store.get_device_by_id(device_id)
+    if not device:
+        return jsonify({'success': False, 'error': 'Device not found'}), 404
+
+    from utils.reading_history import reading_history_store
+    history = reading_history_store.get_history(device_id)
+
+    return jsonify({
+        'success': True,
+        'data': history
+    })
+
 @device_bp.route('/', methods=['POST'])
 @validate_device_data
 @handle_errors
@@ -102,6 +125,9 @@ def add_device():
         emqx_password=encrypted_data.get('emqx_password'),
         emqx_topic=encrypted_data.get('emqx_topic'),
         emqx_use_tls=encrypted_data.get('emqx_use_tls', False),
+        emqx_qos=encrypted_data.get('emqx_qos', 1),
+        emqx_ca_cert_path=encrypted_data.get('emqx_ca_cert_path'),
+        emqx_tls_insecure=encrypted_data.get('emqx_tls_insecure', False),
     )
 
     try:
@@ -203,7 +229,8 @@ def update_device(device_id):
             'meter_reading_field', 'flow_rate_field', 'liters_field', 'tds_field',
             'filtering_method', 'filter_window',
             'data_source', 'emqx_broker_url', 'emqx_port', 'emqx_username',
-            'emqx_password', 'emqx_topic', 'emqx_use_tls'
+            'emqx_password', 'emqx_topic', 'emqx_use_tls',
+            'emqx_qos', 'emqx_ca_cert_path', 'emqx_tls_insecure'
         ]
         updates = {k: data[k] for k in allowed_fields if k in data}
 
@@ -443,18 +470,36 @@ def test_connection(device_id):
     try:
         if data_source == 'emqx':
             from utils.scheduler_firestore import emqx_service
-            # Check status of MQTT connection
-            status = emqx_service.get_status()
-            is_connected = str(device_id) in status.get('connected_devices', [])
-            
+            import time
+
+            # is_connected() reflects an actual broker CONNACK (rc==0), not
+            # just that a client object was created — a client can exist
+            # while still mid-handshake or after the broker rejected it.
+            is_connected = emqx_service.is_connected(device_id)
+
             if not is_connected:
-                # Attempt to subscribe/connect
-                connected = emqx_service.subscribe_device(device_id, device)
-                if not connected:
+                if not emqx_service.subscribe_device(device_id, device):
                     return jsonify({
                         'success': False,
-                        'error': f'Could not connect to EMQX broker at {device.get("emqx_broker_url")}'
+                        'error': 'Failed to start MQTT client (check broker URL/port/TLS settings)'
                     }), 400
+                # connect_async() is non-blocking — give the broker a bounded
+                # window to actually ack the connection before reporting.
+                for _ in range(15):
+                    time.sleep(0.2)
+                    if emqx_service.is_connected(device_id):
+                        is_connected = True
+                        break
+
+            if not is_connected:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'MQTT client started but broker at {device.get("emqx_broker_url")}:'
+                        f'{device.get("emqx_port", 1883)} has not acknowledged the connection — '
+                        'check credentials, broker URL/port, and TLS settings.'
+                    )
+                }), 400
 
             return jsonify({
                 'success': True,
@@ -463,7 +508,8 @@ def test_connection(device_id):
                     'platform': 'emqx',
                     'broker_url': device.get('emqx_broker_url'),
                     'topic': device.get('emqx_topic'),
-                    'port': device.get('emqx_port', 1883)
+                    'port': device.get('emqx_port', 1883),
+                    'qos': device.get('emqx_qos', 1)
                 }
             })
         else:

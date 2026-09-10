@@ -425,7 +425,7 @@ h1, h2, h3, h4, h5, h6 {
     border-radius: var(--radius-ios-xl);
     box-shadow: var(--liquid-shadow-md), var(--liquid-glass-bevel);
     transition: all var(--spring-fluid);
-    overflow: hidden;
+    overflow: visible; /* Allow table rows and content to not be clipped */
     margin-bottom: 1.6rem;
     position: relative;
 }
@@ -433,7 +433,7 @@ h1, h2, h3, h4, h5, h6 {
 .card:hover {
     background: var(--liquid-glass-surface-hover);
     box-shadow: var(--liquid-shadow-lg), var(--liquid-glass-bevel-hover);
-    transform: translateY(-4px) scale(1.006);
+    transform: translateY(-2px);
 }
 
 .card-header {
@@ -550,7 +550,9 @@ h1, h2, h3, h4, h5, h6 {
     -webkit-backdrop-filter: var(--liquid-blur-deep);
     border: var(--liquid-glass-border);
     box-shadow: var(--liquid-shadow-sm), var(--liquid-glass-bevel);
-    overflow: hidden;
+    overflow-x: auto;  /* Enable horizontal scroll so rightmost columns are accessible */
+    overflow-y: visible; /* Don't clip bottom rows */
+    min-height: 300px;  /* Ensure panel has visible height even when few devices */
 }
 
 .table {
@@ -853,20 +855,45 @@ h1, h2, h3, h4, h5, h6 {
 
 .status-badge.status-success {
     background: var(--ios-green-bg);
-    color: var(--ios-green-dark);
+    /* #1D7A32, not the lighter --ios-green-dark (#28A745): the original
+       only hit 2.66:1 contrast against this badge's own composited
+       background — fails WCAG AA (needs 4.5:1 for text this size).
+       Verified by computing actual relative luminance, not eyeballed. */
+    color: #1D7A32;
     border: 0.5px solid rgba(52, 199, 89, 0.25);
 }
 
 .status-badge.status-error {
     background: var(--ios-red-bg);
-    color: #c92a2a;
+    /* #C52929, not #c92a2a: the original hit 4.49:1 — just under the
+       4.5:1 WCAG AA threshold for normal-size text. */
+    color: #C52929;
     border: 0.5px solid rgba(255, 59, 48, 0.25);
 }
 
 .status-badge.status-pending {
     background: rgba(255, 149, 0, 0.12);
-    color: #b76e00;
+    /* #985B00, not #b76e00: the original hit 3.38:1 — fails WCAG AA. */
+    color: #985B00;
     border: 0.5px solid rgba(255, 149, 0, 0.25);
+}
+
+/* Actionable status subtitle (why a device is inactive/errored) */
+.status-detail-cell {
+    display: block;
+}
+
+.status-detail {
+    margin-top: 2px;
+    max-width: 220px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Sortable column headers */
+.sortable-col:hover {
+    color: var(--primary-color);
 }
 
 /* ==========================================================================

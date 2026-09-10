@@ -32,7 +32,7 @@ def test_evaraflow_partial_fields():
         {'entry_id': '4', 'created_at': '2026-07-11T12:03:00Z', 'field3': None, 'field2': None}
     ]
     
-    processed = service._preprocess_evaraflow(device, feeds)
+    processed = service._preprocess_evaraflow('test-device-flow', device, feeds)
     
     assert len(processed) == 3
     
@@ -75,7 +75,7 @@ def test_evaratank_partial_fields():
         {'entry_id': '3', 'created_at': '2026-07-11T12:02:00Z', 'field1': None, 'field2': '28'}
     ]
     
-    processed = service._preprocess_evaratank(device, feeds)
+    processed = service._preprocess_evaratank('test-device-tank', device, feeds)
     
     assert len(processed) == 3
     

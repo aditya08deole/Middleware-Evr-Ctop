@@ -102,7 +102,7 @@
                                     </div>
                                     <div class="col-md-6 mb-3 d-flex align-items-end">
                                         <div class="form-check mb-2">
-                                            <input class="form-check-input" type="checkbox" id="emqx-use-tls" name="emqx_use_tls">
+                                            <input class="form-check-input" type="checkbox" id="emqx-use-tls" name="emqx_use_tls" onchange="toggleEmqxTlsFieldsMulti()">
                                             <label class="form-check-label" for="emqx-use-tls">
                                                 <i class="bi bi-shield-lock"></i> Use TLS/SSL
                                             </label>
@@ -121,11 +121,39 @@
                                         <div data-error="emqx_password"></div>
                                     </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label for="emqx-topic" class="form-label">MQTT Topic *</label>
-                                    <input type="text" class="form-control" id="emqx-topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
-                                    <div class="form-text">The MQTT topic your device publishes data to</div>
-                                    <div data-error="emqx_topic"></div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx-topic" class="form-label">MQTT Topic *</label>
+                                        <input type="text" class="form-control" id="emqx-topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
+                                        <div class="form-text">The MQTT topic your device publishes data to</div>
+                                        <div data-error="emqx_topic"></div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx-qos" class="form-label">QoS</label>
+                                        <select class="form-select" id="emqx-qos" name="emqx_qos">
+                                            <option value="0">0 — At most once</option>
+                                            <option value="1" selected>1 — At least once (recommended)</option>
+                                            <option value="2">2 — Exactly once</option>
+                                        </select>
+                                        <div class="form-text">MQTT delivery guarantee for this subscription</div>
+                                    </div>
+                                </div>
+                                <div id="emqx-tls-fields-multi" style="display: none;">
+                                    <div class="mb-3">
+                                        <label for="emqx-ca-cert-path" class="form-label">CA Certificate Path</label>
+                                        <input type="text" class="form-control" id="emqx-ca-cert-path" name="emqx_ca_cert_path" placeholder="/etc/ctop/certs/emqx-ca.pem (optional)">
+                                        <div class="form-text">
+                                            Path (on this server) to the broker's CA certificate. Required for
+                                            self-hosted EMQX Community Edition brokers, which use a self-signed
+                                            certificate by default and will otherwise fail TLS verification.
+                                        </div>
+                                    </div>
+                                    <div class="mb-3 form-check">
+                                        <input class="form-check-input" type="checkbox" id="emqx-tls-insecure" name="emqx_tls_insecure">
+                                        <label class="form-check-label" for="emqx-tls-insecure">
+                                            Skip certificate verification (insecure — dev/test brokers only)
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
                             

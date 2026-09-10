@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime
 from urllib3.util.retry import Retry
-from models import db, Device, Log, ProcessedData
+from models import db, Device, Log
 from config import Config
 import os
 
@@ -144,27 +144,6 @@ class ThingSpeakService:
             logger.error(f"FETCH ERROR [Device {device_id}]: {error_message} (Code: {response_code})")
 
 
-    def fetch_all_active_devices(self):
-        """
-        Fetch data from all active devices
-
-        Returns:
-            dict: {device_id: (success, data, error)}
-        """
-        devices = Device.query.filter_by(is_active=True).all()
-        results = {}
-
-        for device in devices:
-            success, data, error = self.fetch_data(device.id)
-            results[device.id] = {
-                'success': success,
-                'data': data,
-                'error': error,
-                'device_name': device.name
-            }
-
-        return results
-
     def _filter_duplicate_entries(self, device_id, data):
         """
         Filter out entries that have already been processed for this device.
@@ -224,31 +203,6 @@ class ThingSpeakService:
             'channel': data.get('channel'),
             'feeds': filtered_feeds
         }
-
-    def _get_last_processed_entry_id(self, device_id):
-        """
-        Get the last entry_id that was processed for this device.
-        Checks the ProcessedData table for the most recent entry.
-
-        Args:
-            device_id: Device ID
-
-        Returns:
-            str: Last processed entry_id or None if none found
-        """
-        try:
-            # Query for the most recent processed entry for this device
-            last_processed = db.session.query(ProcessedData).filter_by(
-                device_id=int(device_id)
-            ).order_by(ProcessedData.created_at.desc()).first()
-
-            if last_processed:
-                return str(last_processed.thingspeak_entry_id)
-        except Exception as e:
-            logger = self._get_logger()
-            logger.warning(f"Error querying last processed entry_id: {str(e)}")
-
-        return None
 
     def _get_logger(self):
         """Get logger instance"""

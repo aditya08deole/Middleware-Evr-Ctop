@@ -105,7 +105,31 @@ def validate_device_data(f):
                     'success': False,
                     'error': 'EMQX topic cannot start with $ (reserved for system topics)'
                 }), 400
-            
+
+            # Validate QoS if provided (standard MQTT levels: 0, 1, 2)
+            if data.get('emqx_qos') is not None:
+                try:
+                    qos = int(data['emqx_qos'])
+                    if qos not in (0, 1, 2):
+                        return jsonify({
+                            'success': False,
+                            'error': 'EMQX QoS must be 0, 1, or 2'
+                        }), 400
+                except (ValueError, TypeError):
+                    return jsonify({
+                        'success': False,
+                        'error': 'EMQX QoS must be a valid number'
+                    }), 400
+
+            # emqx_tls_insecure (skip certificate verification) must only be
+            # used together with TLS — it's meaningless, and easy to mistake
+            # for "secure" otherwise, when TLS itself is off.
+            if data.get('emqx_tls_insecure') and not data.get('emqx_use_tls'):
+                return jsonify({
+                    'success': False,
+                    'error': 'emqx_tls_insecure requires emqx_use_tls to be enabled'
+                }), 400
+
             # Set default empty values for ThingSpeak fields to avoid downstream errors
             if 'channel_id' not in data or not data['channel_id']:
                 data['channel_id'] = 'emqx'

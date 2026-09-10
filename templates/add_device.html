@@ -78,7 +78,7 @@
                             </div>
                             <div class="col-md-6 mb-3 d-flex align-items-end">
                                 <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls">
+                                    <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" onchange="toggleEmqxTlsFields()">
                                     <label class="form-check-label" for="emqx_use_tls">
                                         <i class="bi bi-shield-lock"></i> Use SSL/TLS
                                     </label>
@@ -95,10 +95,38 @@
                                 <input type="password" class="form-control" id="emqx_password" name="emqx_password" placeholder="Optional">
                             </div>
                         </div>
-                        <div class="mb-3">
-                            <label for="emqx_topic" class="form-label">MQTT Topic *</label>
-                            <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
-                            <div class="form-text">The topic your device publishes data to</div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_topic" class="form-label">MQTT Topic *</label>
+                                <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
+                                <div class="form-text">The topic your device publishes data to</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_qos" class="form-label">QoS</label>
+                                <select class="form-select" id="emqx_qos" name="emqx_qos">
+                                    <option value="0">0 — At most once</option>
+                                    <option value="1" selected>1 — At least once (recommended)</option>
+                                    <option value="2">2 — Exactly once</option>
+                                </select>
+                                <div class="form-text">MQTT delivery guarantee for this subscription</div>
+                            </div>
+                        </div>
+                        <div id="emqx-tls-fields" style="display: none;">
+                            <div class="mb-3">
+                                <label for="emqx_ca_cert_path" class="form-label">CA Certificate Path</label>
+                                <input type="text" class="form-control" id="emqx_ca_cert_path" name="emqx_ca_cert_path" placeholder="/etc/ctop/certs/emqx-ca.pem (optional)">
+                                <div class="form-text">
+                                    Path (on this server) to the broker's CA certificate. Required for self-hosted
+                                    EMQX Community Edition brokers, which use a self-signed certificate by default
+                                    and will otherwise fail TLS verification.
+                                </div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input class="form-check-input" type="checkbox" id="emqx_tls_insecure" name="emqx_tls_insecure">
+                                <label class="form-check-label" for="emqx_tls_insecure">
+                                    Skip certificate verification (insecure — dev/test brokers only)
+                                </label>
+                            </div>
                         </div>
                     </div>
                     
@@ -432,6 +460,23 @@ function toggleAddDevicePlatform() {
     }
 }
 
+// Toggle TLS-only EMQX fields (CA cert path, insecure checkbox) and
+// auto-switch the port between the plaintext/TLS MQTT defaults — but only
+// when the port still holds one of those two known defaults, so a custom
+// port the user already typed is never silently overwritten.
+function toggleEmqxTlsFields() {
+    const useTls = document.getElementById('emqx_use_tls').checked;
+    document.getElementById('emqx-tls-fields').style.display = useTls ? 'block' : 'none';
+
+    const portInput = document.getElementById('emqx_port');
+    const currentPort = portInput.value;
+    if (useTls && currentPort === '1883') {
+        portInput.value = '8883';
+    } else if (!useTls && currentPort === '8883') {
+        portInput.value = '1883';
+    }
+}
+
 // Helper function to show/hide device specific fields
 function showDeviceFields(deviceType) {
     // Hide all device-specific fields first
@@ -516,6 +561,9 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
         data.emqx_password = formData.get('emqx_password') || null;
         data.emqx_topic = formData.get('emqx_topic');
         data.emqx_use_tls = document.getElementById('emqx_use_tls').checked;
+        data.emqx_qos = parseInt(formData.get('emqx_qos')) || 1;
+        data.emqx_ca_cert_path = formData.get('emqx_ca_cert_path') || null;
+        data.emqx_tls_insecure = data.emqx_use_tls ? document.getElementById('emqx_tls_insecure').checked : false;
     }
     
     // Add device type specific fields

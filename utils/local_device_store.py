@@ -39,7 +39,9 @@ ALLOWED_DEVICE_UPDATE_FIELDS = {
     'last_processed_entry_id',  # Fix #9: was missing, caused silent data loss
     'last_reading_time',        # Timestamp of the latest sensor data point
     'data_source', 'emqx_broker_url', 'emqx_port', 'emqx_username',
-    'emqx_password', 'emqx_topic', 'emqx_use_tls'
+    'emqx_password', 'emqx_topic', 'emqx_use_tls',
+    'emqx_qos', 'emqx_ca_cert_path', 'emqx_tls_insecure',
+    'consecutive_failures', 'needs_attention', 'last_ctop_attempt_time'
 }
 
 class LocalDeviceStore:
@@ -344,6 +346,16 @@ class LocalDeviceStore:
         with self._lock:
             return self._devices.get(str(device_id))
 
+    # NOTE [Flush consistency]: add_device()/delete_device() above flush()
+    # synchronously — a device create/delete is rare and its durability
+    # matters immediately. update_entry_id()/increment_device_stats()/
+    # update_device_fields() below deliberately do NOT: they're called on
+    # every scheduler tick for every device (this store docstring's whole
+    # "OPTIMIZED FOR 10,000+ DEVICES" design goal), and a synchronous
+    # SQLite write per call at that volume would defeat the point of the
+    # in-memory index. They rely on _background_flush_loop() picking up
+    # `_dirty_devices`/`_dirty_meta` within 10 seconds instead — an
+    # intentional durability/throughput tradeoff, not an oversight.
     def update_entry_id(self, device_id: str, entry_id: str, last_status: str = 'success', last_reading_time: Optional[str] = None) -> bool:
         did = str(device_id)
         with self._lock:

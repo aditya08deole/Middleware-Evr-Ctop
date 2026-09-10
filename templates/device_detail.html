@@ -47,6 +47,17 @@
                         <label class="text-muted small">MQTT Topic</label>
                         <div class="fw-bold"><code>{{ device.emqx_topic }}</code></div>
                     </div>
+                    <div class="mb-3">
+                        <label class="text-muted small">QoS / TLS</label>
+                        <div class="fw-bold">
+                            QoS {{ device.emqx_qos if device.emqx_qos is not none else 1 }}
+                            {% if device.emqx_use_tls %}
+                                &middot; TLS{% if device.emqx_tls_insecure %} (cert verification skipped){% endif %}
+                            {% else %}
+                                &middot; Plaintext
+                            {% endif %}
+                        </div>
+                    </div>
                     {% else %}
                     <div class="mb-3">
                         <label class="text-muted small">ThingSpeak Channel ID</label>
@@ -73,7 +84,18 @@
                             <span class="badge {% if device.last_status == 'success' %}bg-success{% elif device.last_status == 'error' %}bg-danger{% else %}bg-warning{% endif %}">
                                 {{ device.last_status or 'Unknown' }}
                             </span>
+                            {% if device.needs_attention %}
+                            <span class="badge bg-danger" title="{{ device.consecutive_failures or 0 }} consecutive CTOP delivery failures">
+                                <i class="bi bi-exclamation-triangle-fill"></i> Needs Attention
+                                ({{ device.consecutive_failures or 0 }} failed in a row)
+                            </span>
+                            {% endif %}
                         </div>
+                        {% if device.last_error %}
+                        <div class="form-text text-danger mt-1">
+                            <i class="bi bi-info-circle"></i> {{ device.last_error }}
+                        </div>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label class="text-muted small">Total Fetches</label>
@@ -105,6 +127,19 @@
         
         <!-- Activity Chart & Quick Actions -->
         <div class="col-lg-8 mb-4">
+            <!-- Reading Trend Sparkline -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-graph-up-arrow"></i> Reading Trend</h5>
+                    <span class="text-muted small" id="reading-trend-metric-label"></span>
+                </div>
+                <div class="card-body">
+                    <div id="reading-trend-sparkline">
+                        <div class="text-center text-muted small py-3">Loading...</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Activity Chart -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header">
@@ -114,7 +149,7 @@
                     <canvas id="deviceActivityChart" height="200"></canvas>
                 </div>
             </div>
-            
+
             <!-- Quick Actions -->
             <div class="card shadow-sm mb-4">
                 <div class="card-header">
@@ -194,7 +229,94 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     loadDeviceActivityChart();
+    loadReadingTrend();
 });
+
+// Metric key names come from preprocess_service.py's
+// transform_to_ctop_format() — a small, fixed, hardcoded set of keys
+// (water_level, flow_rate, temperature, etc.), never arbitrary
+// user-controlled strings, so no HTML-escaping is needed for metricKey.
+async function loadReadingTrend() {
+    const deviceId = '{{ device.id if device else "" }}';
+    const container = document.getElementById('reading-trend-sparkline');
+    const labelEl = document.getElementById('reading-trend-metric-label');
+    if (!deviceId || !container) return;
+
+    try {
+        const response = await fetch(`/devices/${deviceId}/history`);
+        const result = await response.json();
+        const points = (result.success && Array.isArray(result.data)) ? result.data : [];
+
+        if (points.length < 2) {
+            container.innerHTML = '<div class="text-center text-muted small py-3">Not enough recent readings yet to show a trend — this fills in as new data arrives.</div>';
+            if (labelEl) labelEl.textContent = '';
+            return;
+        }
+
+        // One sparkline per device keeps this simple — pick whichever
+        // numeric metric the most recent reading reports (a device
+        // reports the same metric set consistently based on its type).
+        const metricKey = Object.keys(points[points.length - 1]).find(k => k !== 't');
+        if (!metricKey) {
+            container.innerHTML = '<div class="text-center text-muted small py-3">No numeric readings available.</div>';
+            if (labelEl) labelEl.textContent = '';
+            return;
+        }
+
+        const series = points.filter(p => typeof p[metricKey] === 'number');
+        if (series.length < 2) {
+            container.innerHTML = '<div class="text-center text-muted small py-3">Not enough recent readings yet to show a trend.</div>';
+            if (labelEl) labelEl.textContent = '';
+            return;
+        }
+
+        if (labelEl) labelEl.textContent = metricKey.replace(/_/g, ' ');
+        container.innerHTML = renderSparklineSvg(series, metricKey);
+    } catch (error) {
+        console.error('Error loading reading trend:', error);
+        container.innerHTML = '<div class="text-center text-muted small py-3">Could not load reading trend.</div>';
+    }
+}
+
+function renderSparklineSvg(series, metricKey) {
+    const width = 600;
+    const height = 120;
+    const padX = 8;
+    const padY = 12;
+
+    const values = series.map(p => p[metricKey]);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = (max - min) || 1; // avoid divide-by-zero when the line is flat
+
+    const stepX = (width - padX * 2) / (series.length - 1);
+    const coords = values.map((v, i) => [
+        padX + i * stepX,
+        padY + (height - padY * 2) * (1 - (v - min) / range)
+    ]);
+
+    const linePath = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const areaPath = `${linePath} L${coords[coords.length - 1][0].toFixed(1)},${height - padY} L${coords[0][0].toFixed(1)},${height - padY} Z`;
+
+    const [lastX, lastY] = coords[coords.length - 1];
+    const lastValue = Math.round(values[values.length - 1] * 100) / 100;
+    const lastPoint = series[series.length - 1];
+    const lastTime = lastPoint.t ? new Date(lastPoint.t).toLocaleString() : '';
+
+    return `
+        <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" preserveAspectRatio="none" role="img" aria-label="Recent ${metricKey} readings trend">
+            <path d="${areaPath}" fill="rgba(0, 122, 255, 0.08)" stroke="none"></path>
+            <path d="${linePath}" fill="none" stroke="#007AFF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+            <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="4" fill="#007AFF">
+                <title>${lastValue} at ${lastTime}</title>
+            </circle>
+        </svg>
+        <div class="d-flex justify-content-between text-muted small mt-1">
+            <span>${series.length} recent readings</span>
+            <span>Latest: <strong class="text-dark">${lastValue}</strong></span>
+        </div>
+    `;
+}
 
 async function loadDeviceActivityChart() {
     const deviceId = '{{ device.id if device else "" }}';

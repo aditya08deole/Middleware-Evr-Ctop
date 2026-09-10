@@ -80,11 +80,10 @@ class CTOPService:
             except Exception as e:
                 return {'error': f'Failed to decrypt auth token: {str(e)}'}
         
-        results = {}
-        
-        if not ctop_url_1:
+        urls = [u for u in (ctop_url_1, ctop_url_2) if u]
+        if not urls:
             return {'error': 'No CTOP URL configured'}
-        
+
         # Ensure auth_token is a full Authorization header value.
         # If user stored only the raw token, prefix with 'Bearer '
         if auth_token and not str(auth_token).lower().startswith('bearer '):
@@ -96,7 +95,7 @@ class CTOPService:
         }
         if auth_token:
             headers['Authorization'] = auth_token
-        
+
         # Extract device name and type for better logging
         device_name = None
         device_type = None
@@ -106,22 +105,50 @@ class CTOPService:
         elif device:
             device_name = device.name
             device_type = device.device_type
-            
-        success, response_data, error = self._send_with_retry(
-            ctop_url_1, payload, headers, device_id, device_name, device_type
-        )
-        
+
+        # Send to every configured CTOP endpoint (ctop_url_1 and, if set,
+        # ctop_url_2) — previously only ctop_url_1 was ever POSTed even
+        # though ctop_url_2 is a fully-wired, user-configurable field, so a
+        # device's secondary CTOP endpoint silently never received data.
+        per_url_results = []
+        for url in urls:
+            success, response_data, error = self._send_with_retry(
+                url, payload, headers, device_id, device_name, device_type
+            )
+            per_url_results.append({
+                'url': url,
+                'success': success,
+                'response': response_data,
+                'error': error
+            })
+
+        overall_success = any(r['success'] for r in per_url_results)
+        failed = [r for r in per_url_results if not r['success']]
+
+        if failed and overall_success:
+            # At least one endpoint took the data, so the pipeline can still
+            # advance — but a partial failure must not vanish silently.
+            import logging
+            failed_summary = ', '.join(f"{r['url']} ({r['error']})" for r in failed)
+            logging.getLogger(__name__).warning(
+                f"CTOP SEND [Device {device_id}]: delivered to "
+                f"{len(per_url_results) - len(failed)}/{len(per_url_results)} endpoints; "
+                f"failed: {failed_summary}"
+            )
+
+        first_result = per_url_results[0]
         results = {
-            'url': ctop_url_1,
-            'success': success,
-            'response': response_data,
-            'error': error
+            'url': first_result['url'],
+            'success': overall_success,
+            'response': first_result['response'],
+            'error': None if overall_success else failed[0]['error'],
+            'results': per_url_results
         }
-        
+
         # Update device status locally (handled by the caller via local_device_store)
         # We removed the direct Firebase write here to save quota as per Issue #9 fix
         pass
-        
+
         return results
     
     def _send_with_retry(self, url, payload, headers, device_id, device_name=None, device_type=None):

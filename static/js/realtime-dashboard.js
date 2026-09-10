@@ -9,6 +9,10 @@ class RealtimeDashboard {
         this.timer = null;
         this.knownDeviceIds = new Set();
         this.currentFilter = 'all';
+        this.searchQuery = '';
+        this.platformFilter = 'all';
+        this.sortColumn = null;
+        this.sortDirection = 'asc';
         this.abortController = null;
         this.visibilityHandler = null;
     }
@@ -76,7 +80,7 @@ class RealtimeDashboard {
 
     setFilter(filterType) {
         this.currentFilter = filterType;
-        
+
         // Highlight active tab button
         document.querySelectorAll('.device-filter-btn').forEach(btn => {
             if (btn.getAttribute('data-filter') === filterType) {
@@ -89,17 +93,53 @@ class RealtimeDashboard {
         this.applyFilter();
     }
 
+    setSearchQuery(query) {
+        this.searchQuery = (query || '').trim().toLowerCase();
+        this.applyFilter();
+    }
+
+    setPlatformFilter(platform) {
+        this.platformFilter = platform || 'all';
+        this.applyFilter();
+    }
+
+    setSort(column) {
+        if (this.sortColumn === column) {
+            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortColumn = column;
+            this.sortDirection = 'asc';
+        }
+
+        document.querySelectorAll('.sortable-col').forEach(th => {
+            const icon = th.querySelector('i');
+            if (!icon) return;
+            if (th.getAttribute('data-sort') === this.sortColumn) {
+                icon.className = this.sortDirection === 'asc' ? 'bi bi-sort-down' : 'bi bi-sort-up';
+            } else {
+                icon.className = 'bi bi-arrow-down-up small text-muted';
+            }
+        });
+
+        this.applySort();
+    }
+
     applyFilter() {
         const tbody = document.getElementById('devices-body');
         if (!tbody) return;
-        
+
         const rows = tbody.querySelectorAll('tr[data-device-id]');
         let visibleCount = 0;
 
         rows.forEach(row => {
             const bucket = row.getAttribute('data-status-bucket'); // 'active' | 'error' | 'inactive'
+            const platform = row.getAttribute('data-platform') || '';
+            const name = (row.getAttribute('data-sort-name') || '').toLowerCase();
 
-            const show = this.currentFilter === 'all' || this.currentFilter === bucket;
+            const statusMatch = this.currentFilter === 'all' || this.currentFilter === bucket;
+            const platformMatch = this.platformFilter === 'all' || this.platformFilter === platform;
+            const searchMatch = !this.searchQuery || name.includes(this.searchQuery);
+            const show = statusMatch && platformMatch && searchMatch;
 
             row.style.display = show ? '' : 'none';
             if (show) visibleCount++;
@@ -111,13 +151,37 @@ class RealtimeDashboard {
             if (!noResultRow) {
                 noResultRow = document.createElement('tr');
                 noResultRow.className = 'no-filter-results-row';
-                noResultRow.innerHTML = `<td colspan="6" class="text-center py-4 text-muted"><i class="bi bi-funnel me-1"></i> No devices match the <strong>${this.currentFilter}</strong> filter.</td>`;
                 tbody.appendChild(noResultRow);
             }
+            noResultRow.innerHTML = `<td colspan="7" class="text-center py-4 text-muted"><i class="bi bi-funnel me-1"></i> No devices match the current filters.</td>`;
             noResultRow.style.display = '';
         } else if (noResultRow) {
             noResultRow.style.display = 'none';
         }
+
+        if (typeof updateBulkToolbar === 'function') updateBulkToolbar();
+    }
+
+    applySort() {
+        if (!this.sortColumn) return;
+        const tbody = document.getElementById('devices-body');
+        if (!tbody) return;
+
+        const rows = Array.from(tbody.querySelectorAll('tr[data-device-id]'));
+        const dir = this.sortDirection === 'asc' ? 1 : -1;
+
+        rows.sort((a, b) => {
+            const av = a.getAttribute(`data-sort-${this.sortColumn}`) || '';
+            const bv = b.getAttribute(`data-sort-${this.sortColumn}`) || '';
+            if (this.sortColumn === 'sync') {
+                const at = new Date(av).getTime();
+                const bt = new Date(bv).getTime();
+                return ((isNaN(at) ? 0 : at) - (isNaN(bt) ? 0 : bt)) * dir;
+            }
+            return av.localeCompare(bv) * dir;
+        });
+
+        rows.forEach(row => tbody.appendChild(row));
     }
 
     updateStats(stats) {
@@ -174,6 +238,10 @@ class RealtimeDashboard {
             return `<div class="sync-time-pill"><span class="sync-date">${dateStr}</span><span class="sync-time">${timeStr}</span></div>`;
         };
 
+        // Status detail and needs-attention inline text have been removed.
+        // Errors are surfaced via the status badge colour and in the Logs page.
+        const formatStatusDetail = () => '';
+
         // Calculate filter tab counter badges accurately — these three are
         // an exhaustive partition of `devices`, so countAll always equals
         // their sum (previously countActive == countAll always, because
@@ -194,7 +262,7 @@ class RealtimeDashboard {
         if (elInactive) elInactive.textContent = countInactive;
         
         if (devices.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No devices registered. <a href="/add-device" class="fw-semibold">Add your first device</a></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No devices registered. <a href="/add-device" class="fw-semibold">Add your first device</a></td></tr>';
             this.knownDeviceIds.clear();
             return;
         }
@@ -225,19 +293,32 @@ class RealtimeDashboard {
                 `<span class="badge bg-success me-1">EMQX</span><code class="small text-truncate d-inline-block" style="max-width: 160px;" title="${safeTopic}">${safeTopic || 'MQTT'}</code>` :
                 `<span class="badge bg-primary me-1">ThingSpeak</span><code>${safeChannelId}</code>`;
 
+            const needsAttentionHtml = ''; // Removed: alert triangle icon next to device name
+            const statusDetailHtml = formatStatusDetail(); // Always empty — errors shown via status badge & logs
+            const platformValue = isEmqx ? 'emqx' : 'thingspeak';
+            const syncSortValue = device.last_sync_time || '';
+
             if (!row) {
                 // New device row
                 row = document.createElement('tr');
                 row.setAttribute('data-device-id', device.id);
                 row.setAttribute('data-status-bucket', statusBucket);
+                row.setAttribute('data-platform', platformValue);
+                row.setAttribute('data-sort-name', device.name || '');
+                row.setAttribute('data-sort-type', device.device_type || '');
+                row.setAttribute('data-sort-status', statusText);
+                row.setAttribute('data-sort-sync', syncSortValue);
 
                 row.innerHTML = `
+                    <td class="col-select">
+                        <input type="checkbox" class="form-check-input device-select-checkbox">
+                    </td>
                     <td class="col-name">
-                        <strong class="device-name">${safeName}</strong>
+                        <strong class="device-name">${safeName}</strong><span class="needs-attention-badge">${needsAttentionHtml}</span>
                     </td>
                     <td class="col-type"><span class="badge bg-secondary">${safeDeviceType}</span></td>
                     <td class="col-channel">${channelHtml}</td>
-                    <td class="col-status"><span class="status-badge ${statusClass}">${statusText}</span></td>
+                    <td class="col-status"><span class="status-badge ${statusClass}">${statusText}</span><span class="status-detail-cell">${statusDetailHtml}</span></td>
                     <td class="col-sync">${lastSyncHtml}</td>
                     <td class="col-actions">
                         <div class="btn-group">
@@ -256,7 +337,7 @@ class RealtimeDashboard {
                         </div>
                     </td>
                 `;
-                
+
                 if (this.knownDeviceIds.size > 0) {
                     row.className = 'new-device-pulse';
                     tbody.prepend(row);
@@ -269,7 +350,12 @@ class RealtimeDashboard {
             } else {
                 // Atomic data updates
                 row.setAttribute('data-status-bucket', statusBucket);
-                
+                row.setAttribute('data-platform', platformValue);
+                row.setAttribute('data-sort-name', device.name || '');
+                row.setAttribute('data-sort-type', device.device_type || '');
+                row.setAttribute('data-sort-status', statusText);
+                row.setAttribute('data-sort-sync', syncSortValue);
+
                 // 1. Update Name
                 const nameEl = row.querySelector('.device-name');
                 if (nameEl && nameEl.textContent !== device.name) {
@@ -285,13 +371,20 @@ class RealtimeDashboard {
                     this.triggerUpdate(statusBadge);
                 }
 
+                // 2b. Update the "why" subtitle underneath the status badge
+                const statusDetailEl = row.querySelector('.status-detail-cell');
+                if (statusDetailEl && statusDetailEl.innerHTML !== statusDetailHtml) {
+                    statusDetailEl.innerHTML = statusDetailHtml;
+                    this.triggerUpdate(statusDetailEl);
+                }
+
                 // 3. Update Sync Time
                 const syncCell = row.querySelector('.col-sync');
                 if (syncCell && syncCell.innerHTML !== lastSyncHtml) {
                     syncCell.innerHTML = lastSyncHtml;
                     this.triggerUpdate(syncCell);
                 }
-                
+
                 // 4. Update Type Badge
                 const typeBadge = row.querySelector('.col-type .badge');
                 const typeText = device.device_type || 'Unknown';
@@ -306,6 +399,13 @@ class RealtimeDashboard {
                     channelCell.innerHTML = channelHtml;
                     this.triggerUpdate(channelCell);
                 }
+
+                // 6. Update Needs-Attention indicator
+                const attentionEl = row.querySelector('.needs-attention-badge');
+                if (attentionEl && attentionEl.innerHTML !== needsAttentionHtml) {
+                    attentionEl.innerHTML = needsAttentionHtml;
+                    this.triggerUpdate(attentionEl);
+                }
             }
         });
 
@@ -319,7 +419,8 @@ class RealtimeDashboard {
             }
         });
 
-        // Apply current filter state across table rows
+        // Apply current sort order, then filter state, across table rows
+        this.applySort();
         this.applyFilter();
     }
 

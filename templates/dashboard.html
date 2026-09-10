@@ -49,7 +49,7 @@
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div class="d-flex align-items-center flex-wrap gap-3">
                     <h5 class="mb-0 fw-bold"><i class="bi bi-device-hdd me-1"></i> Registered Devices</h5>
-                    
+
                     <!-- Device Status Filter Tabs -->
                     <div class="device-filter-pills d-inline-flex gap-1 p-1 bg-light rounded-pill border" role="tablist">
                         <button class="device-filter-btn active" data-filter="all" onclick="filterDevices('all')">
@@ -76,22 +76,49 @@
                         <span class="visually-hidden">Loading...</span>
                     </div>
                 </div>
-                
+
+                <!-- Search / platform filter toolbar -->
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <div class="input-group input-group-sm" style="max-width: 260px;">
+                        <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="device-search" placeholder="Search devices by name...">
+                    </div>
+                    <select class="form-select form-select-sm" id="platform-filter" style="max-width: 160px;">
+                        <option value="all">All Platforms</option>
+                        <option value="thingspeak">ThingSpeak</option>
+                        <option value="emqx">EMQX</option>
+                    </select>
+
+                    <!-- Bulk action toolbar — hidden until at least one row is selected -->
+                    <div id="bulk-actions" class="d-none ms-auto d-flex align-items-center gap-2">
+                        <span class="text-muted small"><span id="bulk-selected-count">0</span> selected</span>
+                        <button class="btn btn-sm btn-outline-warning" onclick="bulkToggleDevices()">
+                            <i class="bi bi-power"></i> Toggle Active
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="bulkDeleteDevices()">
+                            <i class="bi bi-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+
                 <div class="table-responsive">
                     <table class="table table-hover" id="devices-table">
                         <thead>
                             <tr>
-                                <th>Device ID</th>
-                                <th>Device Type</th>
+                                <th style="width: 2.5rem;">
+                                    <input type="checkbox" class="form-check-input" id="select-all-devices" title="Select all visible devices">
+                                </th>
+                                <th class="sortable-col" data-sort="name">Device ID <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                                <th class="sortable-col" data-sort="type">Device Type <i class="bi bi-arrow-down-up small text-muted"></i></th>
                                 <th>Source / Channel</th>
-                                <th>Status</th>
-                                <th>Last Sync</th>
+                                <th class="sortable-col" data-sort="status">Status <i class="bi bi-arrow-down-up small text-muted"></i></th>
+                                <th class="sortable-col" data-sort="sync">Last Sync <i class="bi bi-arrow-down-up small text-muted"></i></th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="devices-body">
                             <tr>
-                                <td colspan="6" class="text-center">Loading devices...</td>
+                                <td colspan="7" class="text-center">Loading devices...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -220,10 +247,118 @@ function filterDevices(filterType) {
     }
 }
 
+function getSelectedDeviceIds() {
+    return Array.from(document.querySelectorAll('#devices-body .device-select-checkbox:checked'))
+        .map(cb => cb.closest('tr').getAttribute('data-device-id'));
+}
+
+function updateBulkToolbar() {
+    const ids = getSelectedDeviceIds();
+    const toolbar = document.getElementById('bulk-actions');
+    const countEl = document.getElementById('bulk-selected-count');
+    if (countEl) countEl.textContent = ids.length;
+    if (toolbar) toolbar.classList.toggle('d-none', ids.length === 0);
+
+    // Reflect partial/full selection on the header "select all" checkbox
+    const selectAll = document.getElementById('select-all-devices');
+    if (selectAll) {
+        const visibleBoxes = Array.from(document.querySelectorAll('#devices-body tr[data-device-id]:not([style*="display: none"]) .device-select-checkbox'));
+        const checkedVisible = visibleBoxes.filter(cb => cb.checked).length;
+        selectAll.checked = visibleBoxes.length > 0 && checkedVisible === visibleBoxes.length;
+        selectAll.indeterminate = checkedVisible > 0 && checkedVisible < visibleBoxes.length;
+    }
+}
+
+function bulkToggleDevices() {
+    const ids = getSelectedDeviceIds();
+    if (ids.length === 0) return;
+    if (!confirm(`Toggle active status for ${ids.length} device(s)?`)) return;
+
+    showLoading();
+    Promise.all(ids.map(id => fetch(`/devices/${id}/toggle`, { method: 'POST' }).then(r => r.json())))
+        .then(results => {
+            hideLoading();
+            const failed = results.filter(r => !r.success).length;
+            showAlert(
+                failed === 0 ? `Toggled ${ids.length} device(s).` : `Toggled ${ids.length - failed}/${ids.length} device(s) — ${failed} failed.`,
+                failed === 0 ? 'success' : 'warning'
+            );
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Bulk toggle error:', error);
+            showAlert('Error toggling selected devices', 'danger');
+        });
+}
+
+function bulkDeleteDevices() {
+    const ids = getSelectedDeviceIds();
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} device(s)? This cannot be undone.`)) return;
+
+    showLoading();
+    Promise.all(ids.map(id => fetch(`/devices/${id}`, { method: 'DELETE' }).then(r => r.json())))
+        .then(results => {
+            hideLoading();
+            const failed = results.filter(r => !r.success).length;
+            showAlert(
+                failed === 0 ? `Deleted ${ids.length} device(s).` : `Deleted ${ids.length - failed}/${ids.length} device(s) — ${failed} failed.`,
+                failed === 0 ? 'success' : 'warning'
+            );
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Bulk delete error:', error);
+            showAlert('Error deleting selected devices', 'danger');
+        });
+}
+
 // Load data on page load - Handled by realtime-dashboard.js
 document.addEventListener('DOMContentLoaded', () => {
     // Initial data is now managed by RealtimeDashboard class in static/js/realtime-dashboard.js
     console.log("Dashboard initialized. Real-time updates active.");
+
+    const searchInput = document.getElementById('device-search');
+    if (searchInput) {
+        searchInput.addEventListener('input', () => {
+            if (window.dashboard) window.dashboard.setSearchQuery(searchInput.value);
+        });
+    }
+
+    const platformFilter = document.getElementById('platform-filter');
+    if (platformFilter) {
+        platformFilter.addEventListener('change', () => {
+            if (window.dashboard) window.dashboard.setPlatformFilter(platformFilter.value);
+        });
+    }
+
+    document.querySelectorAll('.sortable-col').forEach(th => {
+        th.style.cursor = 'pointer';
+        th.addEventListener('click', () => {
+            if (window.dashboard) window.dashboard.setSort(th.getAttribute('data-sort'));
+        });
+    });
+
+    const selectAll = document.getElementById('select-all-devices');
+    if (selectAll) {
+        selectAll.addEventListener('change', () => {
+            document.querySelectorAll('#devices-body tr[data-device-id]:not([style*="display: none"]) .device-select-checkbox')
+                .forEach(cb => { cb.checked = selectAll.checked; });
+            updateBulkToolbar();
+        });
+    }
+
+    // Delegated listener: row checkboxes are created/recreated by
+    // RealtimeDashboard's polling render, so a direct listener attached
+    // once at load time wouldn't reach checkboxes created later.
+    const tbody = document.getElementById('devices-body');
+    if (tbody) {
+        tbody.addEventListener('change', (e) => {
+            if (e.target.classList.contains('device-select-checkbox')) {
+                updateBulkToolbar();
+            }
+        });
+    }
 });
 </script>
 {% endblock %}
