@@ -165,7 +165,7 @@ def get_stats():
             
             logs = fs.get_logs(limit=1000)
             total_logs = len(logs)
-            error_logs = sum(1 for l in logs if l.get('status') == 'error')
+            error_logs = sum(1 for log in logs if log.get('status') == 'error')
             
             return jsonify({
                 'success': True,

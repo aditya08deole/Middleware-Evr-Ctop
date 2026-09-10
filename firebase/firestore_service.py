@@ -369,7 +369,7 @@ class FirestoreService:
             
             logs = self.get_logs(limit=1000)
             total_logs = len(logs)
-            error_logs = len([l for l in logs if l.get('status') == 'error'])
+            error_logs = len([log for log in logs if log.get('status') == 'error'])
             
             processed_data = self.get_processed_data(limit=1000)
             total_processed = len(processed_data)

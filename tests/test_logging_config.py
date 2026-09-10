@@ -38,7 +38,7 @@ def _capture_one_log(record_fn, formatter=None):
 
 class TestJsonFormatter:
     def test_produces_valid_json_with_expected_fields(self):
-        line = _capture_one_log(lambda l: l.info('hello world'), JsonFormatter())
+        line = _capture_one_log(lambda logger: logger.info('hello world'), JsonFormatter())
         parsed = json.loads(line)
 
         assert parsed['level'] == 'INFO'
@@ -50,7 +50,7 @@ class TestJsonFormatter:
     def test_preserves_fstring_interpolated_message(self):
         device_id = 'dev-123'
         line = _capture_one_log(
-            lambda l: l.warning(f"Device {device_id}: something happened"),
+            lambda logger: logger.warning(f"Device {device_id}: something happened"),
             JsonFormatter()
         )
         parsed = json.loads(line)
@@ -71,7 +71,7 @@ class TestJsonFormatter:
         assert 'boom' in parsed['exception']
 
     def test_timestamp_is_iso8601_utc(self):
-        line = _capture_one_log(lambda l: l.info('x'), JsonFormatter())
+        line = _capture_one_log(lambda logger: logger.info('x'), JsonFormatter())
         parsed = json.loads(line)
         # Must parse cleanly as ISO 8601 and carry UTC offset info.
         from datetime import datetime
@@ -152,5 +152,5 @@ class TestConfigureLogging:
         root.handlers[0].stream = buf
 
         logging.getLogger('test_logging_config').info('single line check')
-        lines = [l for l in buf.getvalue().strip().split('\n') if l]
+        lines = [line for line in buf.getvalue().strip().split('\n') if line]
         assert len(lines) == 1

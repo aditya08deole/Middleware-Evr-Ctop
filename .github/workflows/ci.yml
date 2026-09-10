@@ -25,7 +25,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run test suite
-        run: pytest tests/ -v
+        # `python -m pytest` (not bare `pytest`) — running the pytest
+        # console-script directly does not add the checkout root to
+        # sys.path, so tests/conftest.py's `from models import db` fails
+        # with ModuleNotFoundError. `python -m pytest` adds the current
+        # working directory (the repo root) to sys.path[0] the same way
+        # local development runs (`./venv/Scripts/python.exe -m pytest`)
+        # always have — this makes CI match that exactly.
+        run: python -m pytest tests/ -v
 
   lint:
     name: Lint (informational)
