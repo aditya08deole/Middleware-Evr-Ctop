@@ -15,7 +15,7 @@ import os
 import sys
 from io import StringIO
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from utils.logging_config import JsonFormatter, configure_logging
 
@@ -28,7 +28,7 @@ def _capture_one_log(record_fn, formatter=None):
     handler = logging.StreamHandler(buf)
     if formatter:
         handler.setFormatter(formatter)
-    logger = logging.getLogger('test_logging_config')
+    logger = logging.getLogger("test_logging_config")
     logger.handlers = [handler]
     logger.propagate = False
     logger.setLevel(logging.DEBUG)
@@ -38,44 +38,47 @@ def _capture_one_log(record_fn, formatter=None):
 
 class TestJsonFormatter:
     def test_produces_valid_json_with_expected_fields(self):
-        line = _capture_one_log(lambda logger: logger.info('hello world'), JsonFormatter())
-        parsed = json.loads(line)
-
-        assert parsed['level'] == 'INFO'
-        assert parsed['logger'] == 'test_logging_config'
-        assert parsed['message'] == 'hello world'
-        assert 'timestamp' in parsed
-        assert 'exception' not in parsed
-
-    def test_preserves_fstring_interpolated_message(self):
-        device_id = 'dev-123'
         line = _capture_one_log(
-            lambda logger: logger.warning(f"Device {device_id}: something happened"),
-            JsonFormatter()
+            lambda logger: logger.info("hello world"), JsonFormatter()
         )
         parsed = json.loads(line)
-        assert parsed['message'] == 'Device dev-123: something happened'
+
+        assert parsed["level"] == "INFO"
+        assert parsed["logger"] == "test_logging_config"
+        assert parsed["message"] == "hello world"
+        assert "timestamp" in parsed
+        assert "exception" not in parsed
+
+    def test_preserves_fstring_interpolated_message(self):
+        device_id = "dev-123"
+        line = _capture_one_log(
+            lambda logger: logger.warning(f"Device {device_id}: something happened"),
+            JsonFormatter(),
+        )
+        parsed = json.loads(line)
+        assert parsed["message"] == "Device dev-123: something happened"
 
     def test_includes_exception_info_when_present(self):
         def emit(logger):
             try:
-                raise ValueError('boom')
+                raise ValueError("boom")
             except ValueError:
-                logger.error('failed', exc_info=True)
+                logger.error("failed", exc_info=True)
 
         line = _capture_one_log(emit, JsonFormatter())
         parsed = json.loads(line)
-        assert parsed['level'] == 'ERROR'
-        assert 'exception' in parsed
-        assert 'ValueError' in parsed['exception']
-        assert 'boom' in parsed['exception']
+        assert parsed["level"] == "ERROR"
+        assert "exception" in parsed
+        assert "ValueError" in parsed["exception"]
+        assert "boom" in parsed["exception"]
 
     def test_timestamp_is_iso8601_utc(self):
-        line = _capture_one_log(lambda logger: logger.info('x'), JsonFormatter())
+        line = _capture_one_log(lambda logger: logger.info("x"), JsonFormatter())
         parsed = json.loads(line)
         # Must parse cleanly as ISO 8601 and carry UTC offset info.
         from datetime import datetime
-        dt = datetime.fromisoformat(parsed['timestamp'])
+
+        dt = datetime.fromisoformat(parsed["timestamp"])
         assert dt.tzinfo is not None
 
 
@@ -86,7 +89,7 @@ class TestConfigureLogging:
         # with propagate=False and a stale/closed handler of its own,
         # which would otherwise swallow every message before it ever
         # reaches the root handler these tests are actually inspecting.
-        test_logger = logging.getLogger('test_logging_config')
+        test_logger = logging.getLogger("test_logging_config")
         test_logger.propagate = True
         test_logger.handlers = []
         test_logger.setLevel(logging.NOTSET)
@@ -103,41 +106,41 @@ class TestConfigureLogging:
         self._original_root_level = root.level
 
     def teardown_method(self):
-        os.environ.pop('LOG_FORMAT', None)
-        os.environ.pop('LOG_LEVEL', None)
+        os.environ.pop("LOG_FORMAT", None)
+        os.environ.pop("LOG_LEVEL", None)
 
         root = logging.getLogger()
         root.handlers = self._original_root_handlers
         root.setLevel(self._original_root_level)
 
     def test_default_format_is_plain_text_not_json(self):
-        os.environ.pop('LOG_FORMAT', None)
+        os.environ.pop("LOG_FORMAT", None)
         configure_logging()
 
         buf = StringIO()
         root = logging.getLogger()
         root.handlers[0].stream = buf
 
-        logging.getLogger('test_logging_config').info('plain text check')
+        logging.getLogger("test_logging_config").info("plain text check")
         output = buf.getvalue().strip()
 
         # Must NOT be JSON — confirms default behavior is unchanged.
-        assert not output.startswith('{')
-        assert 'plain text check' in output
+        assert not output.startswith("{")
+        assert "plain text check" in output
 
     def test_json_format_env_var_switches_formatter(self):
-        os.environ['LOG_FORMAT'] = 'json'
+        os.environ["LOG_FORMAT"] = "json"
         configure_logging()
 
         buf = StringIO()
         root = logging.getLogger()
         root.handlers[0].stream = buf
 
-        logging.getLogger('test_logging_config').info('json check')
+        logging.getLogger("test_logging_config").info("json check")
         output = buf.getvalue().strip()
 
         parsed = json.loads(output)
-        assert parsed['message'] == 'json check'
+        assert parsed["message"] == "json check"
 
     def test_force_true_replaces_prior_handlers_not_layers_them(self):
         """Calling configure_logging() twice must not result in duplicate
@@ -151,6 +154,6 @@ class TestConfigureLogging:
         root = logging.getLogger()
         root.handlers[0].stream = buf
 
-        logging.getLogger('test_logging_config').info('single line check')
-        lines = [line for line in buf.getvalue().strip().split('\n') if line]
+        logging.getLogger("test_logging_config").info("single line check")
+        lines = [line for line in buf.getvalue().strip().split("\n") if line]
         assert len(lines) == 1

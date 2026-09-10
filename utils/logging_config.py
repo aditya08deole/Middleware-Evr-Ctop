@@ -38,13 +38,15 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record):
         payload = {
-            'timestamp': datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
-            'level': record.levelname,
-            'logger': record.name,
-            'message': record.getMessage(),
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
         }
         if record.exc_info:
-            payload['exception'] = self.formatException(record.exc_info)
+            payload["exception"] = self.formatException(record.exc_info)
         return json.dumps(payload)
 
 
@@ -52,13 +54,15 @@ def configure_logging():
     """Configure the root logger once, early in app startup. Safe to call
     more than once (e.g. in tests) — each call fully replaces the prior
     configuration rather than layering handlers."""
-    log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
-    log_format = os.environ.get('LOG_FORMAT', 'text').lower()
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    log_format = os.environ.get("LOG_FORMAT", "text").lower()
 
     handler = logging.StreamHandler()
-    if log_format == 'json':
+    if log_format == "json":
         handler.setFormatter(JsonFormatter())
     else:
-        handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
 
     logging.basicConfig(level=log_level, handlers=[handler], force=True)

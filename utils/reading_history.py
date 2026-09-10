@@ -40,7 +40,9 @@ class ReadingHistoryStore:
                 payload dict itself (e.g. {'water_level': 61.2,
                 'temperature': 29.7}). Only numeric entries are kept.
         """
-        numeric_values = {k: v for k, v in (values or {}).items() if isinstance(v, (int, float))}
+        numeric_values = {
+            k: v for k, v in (values or {}).items() if isinstance(v, (int, float))
+        }
         if not numeric_values:
             return
 
@@ -48,12 +50,15 @@ class ReadingHistoryStore:
         entry_key = str(entry_id) if entry_id is not None else None
 
         with self._lock:
-            if entry_key is not None and self._last_recorded_entry_id.get(did) == entry_key:
+            if (
+                entry_key is not None
+                and self._last_recorded_entry_id.get(did) == entry_key
+            ):
                 return
 
             if did not in self._history:
                 self._history[did] = deque(maxlen=self.MAX_POINTS_PER_DEVICE)
-            self._history[did].append({'t': timestamp, **numeric_values})
+            self._history[did].append({"t": timestamp, **numeric_values})
             if entry_key is not None:
                 self._last_recorded_entry_id[did] = entry_key
 

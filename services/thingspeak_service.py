@@ -1,11 +1,10 @@
 import requests
-import json
 import time
-from datetime import datetime
 from urllib3.util.retry import Retry
-from models import db, Device, Log
+from models import db, Device
 from config import Config
 import os
+
 
 class ThingSpeakService:
     """Service for fetching data from ThingSpeak API"""
@@ -16,10 +15,11 @@ class ThingSpeakService:
     def __init__(self):
         self.base_url = Config.THINGSPEAK_BASE_URL
         self.timeout = Config.THINGSPEAK_TIMEOUT
-        self.use_firebase = os.environ.get('USE_FIREBASE', 'false').lower() == 'true'
+        self.use_firebase = os.environ.get("USE_FIREBASE", "false").lower() == "true"
 
         if self.use_firebase:
             from utils.encryption import get_encryption_service
+
             self.encryption_service = get_encryption_service()
 
         # Phase 2 Optimization: Persistent HTTP Session for connection pooling
@@ -39,14 +39,14 @@ class ThingSpeakService:
         adapter = requests.adapters.HTTPAdapter(
             pool_connections=20,
             pool_maxsize=Config.SCHEDULER_MAX_WORKERS,
-            max_retries=connection_retry
+            max_retries=connection_retry,
         )
         self.session.mount("https://", adapter)
         self.session.mount("http://", adapter)
 
         # Per-device duplicate tracking: {device_id: last_processed_entry_id}
         self.device_last_entry_id = {}
-    
+
     def fetch_data(self, device_id, device_data=None):
         """
         Fetch the latest data from ThingSpeak for a specific device.
@@ -62,9 +62,9 @@ class ThingSpeakService:
         # Resolve device credentials
         if device_data:
             device = device_data
-            channel_id = device.get('channel_id')
-            api_key = device.get('api_key')
-            device_id_key = str(device.get('id', device_id))  # For duplicate tracking
+            channel_id = device.get("channel_id")
+            api_key = device.get("api_key")
+            device_id_key = str(device.get("id", device_id))  # For duplicate tracking
         else:
             # SQLite fallback
             device = db.session.get(Device, device_id)
@@ -83,8 +83,8 @@ class ThingSpeakService:
 
         url = f"{self.base_url}/channels/{channel_id}/feeds.json"
         params = {
-            'api_key': api_key,
-            'results': 1  # only fetch the latest 1 entry to prevent CTOP burst
+            "api_key": api_key,
+            "results": 1,  # only fetch the latest 1 entry to prevent CTOP burst
         }
 
         # App-level retry, mirroring ctop_service.py's send-side resilience:
@@ -111,15 +111,19 @@ class ThingSpeakService:
                     filtered_data = data
                 else:
                     filtered_data = self._filter_duplicate_entries(device_id_key, data)
-                    self._log_fetch(device, url, response.status_code, filtered_data, None)
+                    self._log_fetch(
+                        device, url, response.status_code, filtered_data, None
+                    )
 
                 return True, filtered_data, None
 
             except requests.exceptions.RequestException as e:
                 last_error = str(e)
-                status_code = getattr(getattr(e, 'response', None), 'status_code', None)
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
                 if not device_data:
-                    self._log_fetch(device, url, status_code, None, last_error, type(e).__name__)
+                    self._log_fetch(
+                        device, url, status_code, None, last_error, type(e).__name__
+                    )
 
                 # A 4xx from ThingSpeak (bad channel/API key) won't fix itself
                 # by retrying the identical request — stop immediately.
@@ -130,19 +134,35 @@ class ThingSpeakService:
                     time.sleep(self.FETCH_RETRY_DELAY)
 
         return False, None, last_error
-    
-    def _log_fetch(self, device, endpoint, response_code, response_data, error_message, error_type=None):
+
+    def _log_fetch(
+        self,
+        device,
+        endpoint,
+        response_code,
+        response_data,
+        error_message,
+        error_type=None,
+    ):
         """Log ThingSpeak fetch attempt locally"""
         import logging
-        logger = logging.getLogger(__name__)
-        
-        device_id = str(device.get('id', 'unknown')) if isinstance(device, dict) else str(getattr(device, 'id', 'unknown'))
-        
-        if error_message is None:
-            logger.info(f"FETCH [Device {device_id}]: Successfully fetched latest data from ThingSpeak.")
-        else:
-            logger.error(f"FETCH ERROR [Device {device_id}]: {error_message} (Code: {response_code})")
 
+        logger = logging.getLogger(__name__)
+
+        device_id = (
+            str(device.get("id", "unknown"))
+            if isinstance(device, dict)
+            else str(getattr(device, "id", "unknown"))
+        )
+
+        if error_message is None:
+            logger.info(
+                f"FETCH [Device {device_id}]: Successfully fetched latest data from ThingSpeak."
+            )
+        else:
+            logger.error(
+                f"FETCH ERROR [Device {device_id}]: {error_message} (Code: {response_code})"
+            )
 
     def _filter_duplicate_entries(self, device_id, data):
         """
@@ -157,7 +177,7 @@ class ThingSpeakService:
         Returns:
             dict: Filtered data with only NEW entries (entry_ids not yet sent)
         """
-        if not data or 'feeds' not in data:
+        if not data or "feeds" not in data:
             return data
 
         # Get last processed entry_id from in-memory tracker
@@ -166,10 +186,10 @@ class ThingSpeakService:
         # Filter feeds using <= comparison to skip all old entries
         filtered_feeds = []
         latest_entry_id = last_processed_entry_id
-        
-        for feed in data.get('feeds', []):
-            entry_id = str(feed.get('entry_id', ''))
-            
+
+        for feed in data.get("feeds", []):
+            entry_id = str(feed.get("entry_id", ""))
+
             if not entry_id:
                 continue
 
@@ -178,7 +198,9 @@ class ThingSpeakService:
                 try:
                     if int(entry_id) <= int(last_processed_entry_id):
                         logger = self._get_logger()
-                        logger.debug(f"Device {device_id}: Skipping old entry_id {entry_id} (<= {last_processed_entry_id})")
+                        logger.debug(
+                            f"Device {device_id}: Skipping old entry_id {entry_id} (<= {last_processed_entry_id})"
+                        )
                         continue
                 except (ValueError, TypeError):
                     # Non-numeric entry_ids: fall back to string equality
@@ -186,26 +208,23 @@ class ThingSpeakService:
                         continue
 
             filtered_feeds.append(feed)
-            
+
             # Track the highest entry_id we've seen
             try:
                 if latest_entry_id is None or int(entry_id) > int(latest_entry_id):
                     latest_entry_id = entry_id
             except (ValueError, TypeError):
                 latest_entry_id = entry_id
-        
+
         # Update in-memory tracker with the latest entry_id
         if latest_entry_id:
             self.device_last_entry_id[device_id] = latest_entry_id
 
         # Return data with filtered feeds
-        return {
-            'channel': data.get('channel'),
-            'feeds': filtered_feeds
-        }
+        return {"channel": data.get("channel"), "feeds": filtered_feeds}
 
     def _get_logger(self):
         """Get logger instance"""
         import logging
-        return logging.getLogger(__name__)
 
+        return logging.getLogger(__name__)

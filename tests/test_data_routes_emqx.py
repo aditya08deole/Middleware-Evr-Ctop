@@ -31,7 +31,7 @@ import unittest.mock as mock
 
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from models import db, Device
 from routes.data_routes import data_bp
@@ -46,16 +46,16 @@ def client(app):
 
 def _make_emqx_device():
     device = Device(
-        name='Tank 1',
-        channel_id='emqx',
-        api_key='not_used_emqx',
-        ctop_url_1='https://ctop.example.com/api/nodes/1',
-        auth_token='dummy-auth-token',
-        device_type='EvaraTank',
-        data_source='emqx',
-        emqx_broker_url='broker.example.com',
+        name="Tank 1",
+        channel_id="emqx",
+        api_key="not_used_emqx",
+        ctop_url_1="https://ctop.example.com/api/nodes/1",
+        auth_token="dummy-auth-token",
+        device_type="EvaraTank",
+        data_source="emqx",
+        emqx_broker_url="broker.example.com",
         emqx_port=1883,
-        emqx_topic='evara/tank/1/data',
+        emqx_topic="evara/tank/1/data",
         is_active=True,
     )
     db.session.add(device)
@@ -71,13 +71,14 @@ def test_fetch_all_routes_emqx_through_real_singleton(app, client):
     mock_emqx = mock.MagicMock()
     mock_emqx.fetch_data.return_value = (True, {"channel": {}, "feeds": []}, None)
 
-    with mock.patch.object(scheduler_mod, 'emqx_service', mock_emqx), \
-         mock.patch.dict(os.environ, {'USE_FIREBASE': 'false'}):
-        resp = client.post('/data/fetch-all')
+    with mock.patch.object(scheduler_mod, "emqx_service", mock_emqx), mock.patch.dict(
+        os.environ, {"USE_FIREBASE": "false"}
+    ):
+        resp = client.post("/data/fetch-all")
 
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data['success'] is True
+    assert data["success"] is True
 
     # The core assertion: fetch_data() must have been called on the real
     # singleton (our mock stand-in for it), not on some disconnected
@@ -87,8 +88,8 @@ def test_fetch_all_routes_emqx_through_real_singleton(app, client):
     assert called_device_id == device_id
     # device_data passed through must carry real EMQX credentials/config,
     # not just a bare device_id — fetch_data() needs it to auto-subscribe.
-    assert called_device_data['emqx_broker_url'] == 'broker.example.com'
-    assert called_device_data['emqx_topic'] == 'evara/tank/1/data'
+    assert called_device_data["emqx_broker_url"] == "broker.example.com"
+    assert called_device_data["emqx_topic"] == "evara/tank/1/data"
 
-    result_entry = data['data']['details'][str(device_id)]
-    assert result_entry['success'] is True
+    result_entry = data["data"]["details"][str(device_id)]
+    assert result_entry["success"] is True
