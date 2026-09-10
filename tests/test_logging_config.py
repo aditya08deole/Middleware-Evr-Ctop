@@ -91,9 +91,24 @@ class TestConfigureLogging:
         test_logger.handlers = []
         test_logger.setLevel(logging.NOTSET)
 
+        # configure_logging() calls logging.basicConfig(force=True), which
+        # replaces the ROOT logger's handlers/level for the rest of the
+        # process — including the rest of this pytest session. Snapshot the
+        # root logger's real state (pytest installs its own handler(s) on
+        # it for log capturing) so teardown can put it back exactly,
+        # regardless of what order pytest happens to collect tests in
+        # (collection order isn't guaranteed identical across platforms).
+        root = logging.getLogger()
+        self._original_root_handlers = list(root.handlers)
+        self._original_root_level = root.level
+
     def teardown_method(self):
         os.environ.pop('LOG_FORMAT', None)
         os.environ.pop('LOG_LEVEL', None)
+
+        root = logging.getLogger()
+        root.handlers = self._original_root_handlers
+        root.setLevel(self._original_root_level)
 
     def test_default_format_is_plain_text_not_json(self):
         os.environ.pop('LOG_FORMAT', None)
