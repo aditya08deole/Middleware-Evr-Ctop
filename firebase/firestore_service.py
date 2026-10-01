@@ -127,8 +127,14 @@ class FirestoreService:
                 device["id"] = doc.id
                 devices.append(device)
 
-            # Sort in memory by created_at descending
-            devices.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            # Sort in memory by created_at descending. created_at is a
+            # Firestore server timestamp (DatetimeWithNanoseconds) on every
+            # device created through create_device(), but a hand-imported/
+            # migrated device can legitimately be missing it — comparing
+            # that falsy default ("") against a datetime raises TypeError
+            # and breaks the entire device list. Stringify both sides so a
+            # missing timestamp always sorts as if it were empty instead.
+            devices.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
 
             # Update cache if it was a generic query
             if not filters:

@@ -259,8 +259,22 @@ class LocalDeviceStore:
 
     def sync_from_firebase(self) -> bool:
         """Pull device data from Firebase, merging with local runtime fields."""
-        # Local runtime fields that should NOT be overwritten by Firebase
-        _LOCAL_RUNTIME_FIELDS = {"last_status", "last_error", "last_sync_time"}
+        # Local runtime fields that should NOT be overwritten by Firebase.
+        # None of these are ever written back to Firestore (sync_to_firebase()
+        # only pushes last_processed_entry_id/last_status/last_sync_time/
+        # stats) — so without this, every hourly sync would wipe them back to
+        # "missing" for every device, and the very next scheduler tick would
+        # read a missing last_reading_time as "no prior reading" and mark an
+        # actively-reporting device INACTIVE until its next fresh message.
+        _LOCAL_RUNTIME_FIELDS = {
+            "last_status",
+            "last_error",
+            "last_sync_time",
+            "last_reading_time",
+            "consecutive_failures",
+            "needs_attention",
+            "last_ctop_attempt_time",
+        }
 
         try:
             from firebase.firestore_service import FirestoreService
@@ -328,8 +342,29 @@ class LocalDeviceStore:
                 return True
 
             batch = fs.get_batch()
-            count = 0
+            batch_ids = []
+            committed_ids = []
             from google.cloud import firestore
+
+            def _flush_batch():
+                # A single device deleted on the Firestore side (while still
+                # present locally) makes batch.update() raise NOT_FOUND for
+                # the whole batch. Previously that exception propagated to
+                # the outer try/except, aborting entry-id/stats sync for
+                # EVERY device in this hourly cycle, not just the bad one.
+                # Committing in its own try/except means one bad batch is
+                # just logged and skipped — the rest of the cycle still runs.
+                if not batch_ids:
+                    return
+                try:
+                    fs.commit_batch(batch)
+                    committed_ids.extend(batch_ids)
+                except Exception as batch_err:
+                    logger.error(
+                        f"[LocalStore] Sync-to-Firebase batch failed "
+                        f"({len(batch_ids)} device(s), e.g. a device deleted "
+                        f"remotely but still present locally): {batch_err}"
+                    )
 
             for dev in devices:
                 did = dev.get("id")
@@ -356,19 +391,21 @@ class LocalDeviceStore:
                         payload["failed_sends"] = firestore.Increment(s["failed_sends"])
 
                 fs.update_device(did, payload, batch=batch)
-                count += 1
-                if count >= 450:
-                    fs.commit_batch(batch)
+                batch_ids.append(did)
+                if len(batch_ids) >= 450:
+                    _flush_batch()
                     batch = fs.get_batch()
-                    count = 0
+                    batch_ids = []
 
-            if count > 0:
-                fs.commit_batch(batch)
+            _flush_batch()
 
-            # Clear synced stats
+            # Clear synced stats — only for devices whose batch actually
+            # committed, so a failed batch's stats aren't lost (they'll be
+            # retried, correctly incremented further, on the next sync).
             with self._lock:
-                for did, s in stats_snapshot.items():
-                    if did in self._stats:
+                for did in committed_ids:
+                    s = stats_snapshot.get(did)
+                    if s and did in self._stats:
                         self._stats[did]["fetches"] -= s["fetches"]
                         self._stats[did]["successful_sends"] -= s["successful_sends"]
                         self._stats[did]["failed_sends"] -= s["failed_sends"]

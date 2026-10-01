@@ -149,6 +149,50 @@ class TestLocalDeviceStoreSQLite(unittest.TestCase):
         self.assertIsNotNone(self.store.get_device_by_id("f1"))
 
     @patch("firebase.firestore_service.FirestoreService")
+    def test_sync_from_firebase_preserves_local_runtime_fields(self, mock_fs_class):
+        """
+        Regression test: last_reading_time/consecutive_failures/
+        needs_attention/last_ctop_attempt_time are never written to
+        Firestore (see DeviceModel.to_dict() and sync_to_firebase()'s
+        payload), so a Firebase device record never has them. Before this
+        fix, sync_from_firebase() replaced the local device wholesale except
+        for last_status/last_error/last_sync_time, which wiped these fields
+        back to "missing" on every hourly sync — and the very next scheduler
+        tick read a missing last_reading_time as "no prior reading" and
+        marked an actively-reporting device INACTIVE.
+        """
+        did = "f1"
+        self.store.add_device(
+            {
+                "id": did,
+                "name": "Firebase 1",
+                "last_processed_entry_id": "10",
+                "last_reading_time": "2026-01-01T00:00:00+00:00",
+                "consecutive_failures": 3,
+                "needs_attention": True,
+                "last_ctop_attempt_time": "2026-01-01T00:00:00+00:00",
+            }
+        )
+
+        mock_fs = mock_fs_class.return_value
+        mock_fs.is_initialized.return_value = True
+        # Firebase's copy of this device has none of the local-only runtime
+        # fields — matches what create_device()/sync_to_firebase() actually
+        # produce in Firestore.
+        mock_fs.list_devices.return_value = [
+            {"id": did, "name": "Firebase 1", "last_processed_entry_id": "10"}
+        ]
+
+        success = self.store.sync_from_firebase()
+        self.assertTrue(success)
+
+        dev = self.store.get_device_by_id(did)
+        self.assertEqual(dev["last_reading_time"], "2026-01-01T00:00:00+00:00")
+        self.assertEqual(dev["consecutive_failures"], 3)
+        self.assertTrue(dev["needs_attention"])
+        self.assertEqual(dev["last_ctop_attempt_time"], "2026-01-01T00:00:00+00:00")
+
+    @patch("firebase.firestore_service.FirestoreService")
     def test_sync_to_firebase(self, mock_fs_class):
         """Verify batch sync to Firebase"""
         mock_fs = mock_fs_class.return_value

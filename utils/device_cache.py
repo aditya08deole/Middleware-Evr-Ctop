@@ -1,6 +1,5 @@
 import threading
 import logging
-from datetime import datetime
 from utils.local_device_store import local_device_store
 
 logger = logging.getLogger(__name__)
@@ -21,8 +20,6 @@ class DeviceCache:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super(DeviceCache, cls).__new__(cls)
-                cls._instance._last_update = None
-                cls._instance._refresh_interval = 300  # 5 minutes
         return cls._instance
 
     def get_devices(self, force_refresh=False, active_only=True):
@@ -48,10 +45,7 @@ class DeviceCache:
         This is a 'heavy' operation (1 Firebase Read) and should be used sparingly.
         """
         logger.info("DeviceCache: Forcing sync from Firebase to Local Mirror...")
-        success = local_device_store.sync_from_firebase()
-        if success:
-            self._last_update = datetime.now()
-        return success
+        return local_device_store.sync_from_firebase()
 
     def get_device_by_id(self, device_id):
         """Get a specific device from the local store"""

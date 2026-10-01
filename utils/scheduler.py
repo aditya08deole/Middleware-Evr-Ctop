@@ -1,6 +1,6 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import os
 import threading
@@ -33,6 +33,17 @@ logger = logging.getLogger(__name__)
 # periodic scheduled tick for the same device — both call process_device_safe().
 _device_locks = {}
 _device_locks_guard = threading.Lock()
+
+# A device is considered INACTIVE if its latest data point is older than
+# this many minutes — mirrors utils/scheduler_firestore.py's identical
+# constant/guard. The Device model (models/device_model.py) has no
+# last_reading_time column, so this is tracked in-memory only (same
+# approach as ThingSpeakService.device_last_entry_id below) — acceptable
+# here since this is a one-time-per-reading freshness check, not data that
+# needs to survive a restart.
+STALENESS_THRESHOLD_MINUTES = 30
+_last_reading_times = {}
+_last_reading_times_lock = threading.Lock()
 
 # CTOP delivery health tracking (see process_device() Step 5) — mirrors
 # utils/scheduler_firestore.py's identical constants/logic. A device that
@@ -111,25 +122,88 @@ def process_device(device_id):
 
         logger.info(f"Fetched data for device {device.name}")
 
-        # EMQX-specific fast path: if our subscriber client isn't even
-        # connected to the broker right now (bad credentials, network drop,
-        # broker restart), that's a much stronger and more immediate signal
-        # than "no message arrived this tick" — mirrors the identical check
-        # in utils/scheduler_firestore.py.
-        if (
-            data_source == "emqx"
-            and not raw_data.get("feeds")
-            and not emqx_service.is_connected(device_id)
-        ):
-            logger.warning(
-                f"Device {device.name}: EMQX client not connected to broker "
-                f"— marking inactive immediately."
-            )
-            device.last_status = "inactive"
-            device.last_error = "MQTT client is not connected to the broker"
-            device.last_sync_time = datetime.utcnow()
-            db.session.commit()
-            return
+        # ── STALENESS GUARD (mirrors utils/scheduler_firestore.py) ──────
+        # Determine the timestamp of the latest data point from the feed.
+        # If it's older than STALENESS_THRESHOLD_MINUTES — or there's no
+        # feed this tick AND no prior in-memory reading at all — mark the
+        # device INACTIVE and skip further processing. Previously this
+        # legacy (non-Firebase) scheduler had no staleness detection at
+        # all: a dead ThingSpeak channel just kept showing whatever
+        # last_status happened to be set to from the last real attempt.
+        feeds = raw_data.get("feeds", []) if raw_data else []
+        latest_reading_time = None
+        if feeds:
+            last_feed = feeds[-1]
+            ts_str = last_feed.get("created_at")
+            if ts_str:
+                try:
+                    latest_reading_time = datetime.fromisoformat(
+                        str(ts_str).replace("Z", "+00:00")
+                    )
+                except (ValueError, AttributeError):
+                    latest_reading_time = None
+
+        now_utc = datetime.now(timezone.utc)
+        if latest_reading_time:
+            age_minutes = (now_utc - latest_reading_time).total_seconds() / 60
+            if age_minutes > STALENESS_THRESHOLD_MINUTES:
+                logger.info(
+                    f"Device {device.name} data is stale ({age_minutes:.1f} min "
+                    f"old > {STALENESS_THRESHOLD_MINUTES} min). Marking INACTIVE."
+                )
+                device.last_status = "inactive"
+                device.last_error = None
+                device.last_sync_time = datetime.utcnow()
+                db.session.commit()
+                return
+            with _last_reading_times_lock:
+                _last_reading_times[device_id] = latest_reading_time
+        else:
+            # No feed this tick — normal for both platforms once the
+            # current reading has already been seen. EMQX-specific fast
+            # path: if our subscriber client isn't even connected to the
+            # broker right now (bad credentials, network drop, broker
+            # restart), that's a much stronger and more immediate signal
+            # than "no message arrived this tick".
+            if data_source == "emqx" and not emqx_service.is_connected(device_id):
+                logger.warning(
+                    f"Device {device.name}: EMQX client not connected to broker "
+                    f"— marking inactive immediately."
+                )
+                device.last_status = "inactive"
+                device.last_error = "MQTT client is not connected to the broker"
+                device.last_sync_time = datetime.utcnow()
+                db.session.commit()
+                return
+
+            with _last_reading_times_lock:
+                stored_dt = _last_reading_times.get(device_id)
+
+            if stored_dt is None:
+                logger.info(
+                    f"Device {device.name} has no prior reading. Marking INACTIVE."
+                )
+                device.last_status = "inactive"
+                device.last_error = None
+                device.last_sync_time = datetime.utcnow()
+                db.session.commit()
+                return
+
+            age_minutes = (now_utc - stored_dt).total_seconds() / 60
+            if age_minutes > STALENESS_THRESHOLD_MINUTES:
+                logger.info(
+                    f"Device {device.name} last reading is stale "
+                    f"({age_minutes:.1f} min old). Marking INACTIVE."
+                )
+                device.last_status = "inactive"
+                device.last_error = None
+                device.last_sync_time = datetime.utcnow()
+                db.session.commit()
+                return
+            # Still within the freshness window — idle tick, not stale.
+            # Fall through to preprocessing, which will no-op on the empty
+            # feed list below without touching last_status.
+        # ── END STALENESS GUARD ──────────────────────────────────────────
 
         # Step 2: Preprocess (device-specific preprocessing)
         success, processed_data, error = preprocess_service.preprocess_data(
@@ -157,7 +231,13 @@ def process_device(device_id):
                 # itself succeeded — don't leave the drained buffer stuck
                 # pending forever.
                 emqx_service.confirm_consumed(device_id)
-            device.last_status = "success"
+            # Don't touch last_status — mirrors the fix already applied to
+            # utils/scheduler_firestore.py. No send was attempted this tick,
+            # so last_status must be left exactly as the last real attempt
+            # left it. Unconditionally setting "success" here previously
+            # overwrote a real "error"/"warning" status, making the
+            # dashboard flash success for a few seconds before flipping
+            # back on the next tick that actually tried to send.
             device.last_sync_time = datetime.utcnow()
             db.session.commit()
             return
@@ -381,26 +461,18 @@ def _acquire_scheduler_ownership():
     the two scheduler implementations never contend with each other even if
     something unusual imported both in one process.
 
-    Uses a non-blocking file lock (fcntl, POSIX-only): the first worker to
-    start wins the lock and runs the scheduler; the rest skip it. On
-    platforms without fcntl (Windows local dev via `python app.py`), this is
-    a no-op — those runs are always single-process anyway.
+    Uses a non-blocking exclusive file lock (see utils/proc_lock.py — fcntl
+    on POSIX, msvcrt on Windows): the first worker to start wins the lock
+    and runs the scheduler; the rest skip it.
     """
-    try:
-        import fcntl
-    except ImportError:
-        return True
+    from utils.proc_lock import acquire_exclusive_lock
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     instance_dir = os.path.join(base_dir, "instance")
-    os.makedirs(instance_dir, exist_ok=True)
     lock_path = os.path.join(instance_dir, "scheduler_sqlite.lock")
 
-    lock_file = open(lock_path, "w")
-    try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        lock_file.close()
+    lock_file = acquire_exclusive_lock(lock_path)
+    if lock_file is None:
         return False
 
     global _scheduler_lock_file

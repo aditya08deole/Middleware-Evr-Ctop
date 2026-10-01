@@ -572,26 +572,18 @@ def _acquire_scheduler_ownership():
     BackgroundScheduler instances all polling and posting the same devices,
     and N MQTT clients fighting over the same client_id).
 
-    Uses a non-blocking file lock (fcntl, POSIX-only): the first worker to
-    start wins the lock and runs the scheduler; the rest skip it. On
-    platforms without fcntl (Windows local dev via `python app.py`), this is
-    a no-op — those runs are always single-process anyway.
+    Uses a non-blocking exclusive file lock (see utils/proc_lock.py — fcntl
+    on POSIX, msvcrt on Windows): the first worker to start wins the lock
+    and runs the scheduler; the rest skip it.
     """
-    try:
-        import fcntl
-    except ImportError:
-        return True
+    from utils.proc_lock import acquire_exclusive_lock
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     instance_dir = os.path.join(base_dir, "instance")
-    os.makedirs(instance_dir, exist_ok=True)
     lock_path = os.path.join(instance_dir, "scheduler.lock")
 
-    lock_file = open(lock_path, "w")
-    try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        lock_file.close()
+    lock_file = acquire_exclusive_lock(lock_path)
+    if lock_file is None:
         return False
 
     global _scheduler_lock_file
