@@ -10,14 +10,23 @@ firestore_service = None
 
 
 def get_firestore_service():
-    """Get or initialize Firestore service"""
+    """
+    Get or initialize Firestore service. This route was unreachable from
+    any real caller until the @auth_required gate above it was removed
+    (see the full-stack audit) — FirestoreService(credentials_path) below
+    was dead code that had never actually run: the class is a singleton
+    whose __new__/__init__ take no arguments (it reads its credentials
+    path from FIREBASE_CREDENTIALS_PATH itself, exactly like every other
+    service in this codebase), so this call always raised TypeError the
+    moment it became reachable.
+    """
     global firestore_service
     if firestore_service is None:
         use_firebase = os.environ.get("USE_FIREBASE", "false").lower() == "true"
         if use_firebase:
-            credentials_path = os.environ.get("FIREBASE_CREDENTIALS_PATH")
-            if credentials_path and os.path.exists(credentials_path):
-                firestore_service = FirestoreService(credentials_path)
+            fs = FirestoreService()
+            if fs.is_initialized():
+                firestore_service = fs
     return firestore_service
 
 
