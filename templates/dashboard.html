@@ -2,6 +2,7 @@
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/realtime-dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 <div class="row mb-4">
     <div class="col-md-12">
         <div>
@@ -41,6 +42,26 @@
     </div>
 </div>
 
+
+<!-- Analytics -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-3 mb-md-0">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-pie-chart"></i> Device Status</h6></div>
+            <div class="card-body" style="height: 240px;">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header"><h6 class="mb-0"><i class="bi bi-graph-up"></i> CTOP Delivery (last 1000 logs)</h6></div>
+            <div class="card-body" style="height: 240px;">
+                <canvas id="successFailureChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Devices List -->
 <div class="row">

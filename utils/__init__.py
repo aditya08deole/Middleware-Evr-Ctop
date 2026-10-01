@@ -8,8 +8,4 @@ if use_firebase:
 else:
     from .scheduler import scheduler, init_scheduler
 
-# Comes after the USE_FIREBASE-gated block above by necessity — noqa: E402
-# is correct here, not reordering.
-from .helpers import format_timestamp, validate_url  # noqa: E402
-
-__all__ = ["scheduler", "init_scheduler", "format_timestamp", "validate_url"]
+__all__ = ["scheduler", "init_scheduler"]

@@ -43,9 +43,19 @@ def auth_required(f):
                 401,
             )
 
-        # Get user data
+        # Get user data. Deliberately caught here rather than left to a
+        # handle_errors wrapper further in: auth_required runs BEFORE that
+        # decorator (decorators apply bottom-up), so an uncaught exception
+        # here previously fell through to Flask's generic HTML 500 page
+        # instead of the JSON error shape every other route promises.
         uid = result["data"]["uid"]
-        user = firestore_service.get_user(uid)
+        try:
+            user = firestore_service.get_user(uid)
+        except Exception as e:
+            return (
+                jsonify({"success": False, "error": f"Failed to load user: {e}"}),
+                500,
+            )
 
         if not user:
             return jsonify({"success": False, "error": "User not found"}), 404

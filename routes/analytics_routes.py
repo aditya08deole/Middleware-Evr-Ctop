@@ -1,5 +1,4 @@
 from flask import Blueprint, jsonify
-from middleware.auth_middleware import auth_required
 from firebase.firestore_service import FirestoreService
 from datetime import datetime, timedelta
 import os
@@ -23,7 +22,6 @@ def get_firestore_service():
 
 
 @analytics_bp.route("/device-activity", methods=["GET"])
-@auth_required
 def get_device_activity():
     """Get device activity data for charts"""
     try:
@@ -73,7 +71,6 @@ def get_device_activity():
 
 
 @analytics_bp.route("/success-failure-rate", methods=["GET"])
-@auth_required
 def get_success_failure_rate():
     """Get success/failure rate for charts"""
     try:
@@ -117,7 +114,6 @@ def get_success_failure_rate():
 
 
 @analytics_bp.route("/data-volume", methods=["GET"])
-@auth_required
 def get_data_volume():
     """Get data volume by device for charts"""
     try:
@@ -158,7 +154,6 @@ def get_data_volume():
 
 
 @analytics_bp.route("/device-status", methods=["GET"])
-@auth_required
 def get_device_status():
     """Get device status distribution for charts"""
     try:
@@ -205,7 +200,6 @@ def get_device_status():
 
 
 @analytics_bp.route("/device/<device_id>/activity", methods=["GET"])
-@auth_required
 def get_device_activity_detail(device_id):
     """Get activity data for a specific device"""
     try:

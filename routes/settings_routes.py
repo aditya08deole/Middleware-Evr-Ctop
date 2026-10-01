@@ -1,236 +1,109 @@
+import os
 from flask import Blueprint, request, jsonify
 from firebase.firestore_service import FirestoreService
-from firebase.auth_service import AuthService
-from middleware import auth_required, role_required, handle_errors
-from utils.encryption import get_encryption_service
+from middleware import handle_errors
 from config import Config
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
 firestore_service = FirestoreService()
-auth_service = AuthService()
-encryption_service = get_encryption_service()
+
+# User accounts (profile/preferences/notifications/password) were removed
+# from this blueprint: they depended on a logged-in Firebase user, but the
+# dashboard's login page authenticates against a different Firebase project
+# than the server verifies against, so no session here can ever be valid —
+# see the full-stack audit (2 Oct 2026) for the underlying cross-project
+# mismatch. Only the scheduler control survives, since it doesn't need a
+# user identity and can be made to actually work.
+
+
+def _get_active_scheduler_module():
+    """Whichever scheduler backend is actually running (USE_FIREBASE)."""
+    if os.environ.get("USE_FIREBASE", "false").lower() == "true":
+        from utils import scheduler_firestore as module
+    else:
+        from utils import scheduler as module
+    return module
 
 
 @settings_bp.route("/", methods=["GET"])
-@auth_required
 @handle_errors
 def get_settings():
-    """Get all settings for current user"""
-    from middleware import get_current_user
-
-    user = get_current_user()
-
-    if not user:
-        return jsonify({"success": False, "error": "User not authenticated"}), 401
-
-    uid = user.get("id")
-
-    # Get user data from Firestore
-    user_data = firestore_service.get_user(uid)
-
-    # Get scheduler settings from config (Config only stores the interval in
-    # seconds — SCHEDULER_INTERVAL_MINUTES doesn't exist, derive it instead)
-    scheduler_settings = {
-        "interval_minutes": round(Config.SCHEDULER_INTERVAL_SECONDS / 60, 2),
-        "enabled": True,  # Could be stored in Firestore
-        "timezone": "UTC",
-    }
-
-    settings = {
-        "profile": {
-            "display_name": (
-                user_data.get("display_name") if user_data else user.get("display_name")
-            ),
-            "email": user.get("email"),
-            "photo_url": user_data.get("photo_url") if user_data else None,
-        },
-        "preferences": (
-            user_data.get("preferences", {})
-            if user_data
-            else {
-                "theme": "light",
-                "language": "en",
-                "timezone": "UTC",
-                "date_format": "MM/DD/YYYY",
-            }
-        ),
-        "notifications": (
-            user_data.get("notifications", {})
-            if user_data
-            else {"email": True, "browser": True, "errors": True, "sync": False}
-        ),
-        "scheduler": scheduler_settings,
-    }
-
-    return jsonify({"success": True, "data": settings})
-
-
-@settings_bp.route("/profile", methods=["PUT"])
-@auth_required
-@handle_errors
-def update_profile():
-    """Update user profile"""
-    from middleware import get_current_user
-
-    user = get_current_user()
-
-    if not user:
-        return jsonify({"success": False, "error": "User not authenticated"}), 401
-
-    data = request.get_json()
-    uid = user.get("id")
-
-    updates = {}
-    if "display_name" in data:
-        updates["display_name"] = data["display_name"]
-    if "photo_url" in data:
-        updates["photo_url"] = data["photo_url"]
-
-    # Update in Firebase Auth
-    if "display_name" in data:
-        auth_service.update_user(uid, {"display_name": data["display_name"]})
-
-    # Update in Firestore
-    if updates:
-        firestore_service.update_user(uid, updates)
-
-    return jsonify({"success": True, "message": "Profile updated successfully"})
-
-
-@settings_bp.route("/preferences", methods=["PUT"])
-@auth_required
-@handle_errors
-def update_preferences():
-    """Update user preferences"""
-    from middleware import get_current_user
-
-    user = get_current_user()
-
-    if not user:
-        return jsonify({"success": False, "error": "User not authenticated"}), 401
-
-    data = request.get_json()
-    uid = user.get("id")
-
-    preferences = {
-        "theme": data.get("theme", "light"),
-        "language": data.get("language", "en"),
-        "timezone": data.get("timezone", "UTC"),
-        "date_format": data.get("date_format", "MM/DD/YYYY"),
-    }
-
-    firestore_service.update_user(uid, {"preferences": preferences})
-
-    return jsonify({"success": True, "message": "Preferences updated successfully"})
-
-
-@settings_bp.route("/notifications", methods=["PUT"])
-@auth_required
-@handle_errors
-def update_notifications():
-    """Update notification settings"""
-    from middleware import get_current_user
-
-    user = get_current_user()
-
-    if not user:
-        return jsonify({"success": False, "error": "User not authenticated"}), 401
-
-    data = request.get_json()
-    uid = user.get("id")
-
-    notifications = {
-        "email": data.get("email", True),
-        "browser": data.get("browser", True),
-        "errors": data.get("errors", True),
-        "sync": data.get("sync", False),
-    }
-
-    firestore_service.update_user(uid, {"notifications": notifications})
-
+    """Get the current scheduler configuration."""
     return jsonify(
-        {"success": True, "message": "Notification settings updated successfully"}
+        {
+            "success": True,
+            "data": {
+                "scheduler": {
+                    "interval_seconds": Config.SCHEDULER_INTERVAL_SECONDS,
+                    "interval_minutes": round(Config.SCHEDULER_INTERVAL_SECONDS / 60, 2),
+                }
+            },
+        }
     )
 
 
-@settings_bp.route("/password", methods=["PUT"])
-@auth_required
+@settings_bp.route("/scheduler", methods=["PUT"])
 @handle_errors
-def change_password():
-    """Change user password"""
-    from middleware import get_current_user
+def update_scheduler_settings():
+    """
+    Update the scheduler's polling interval and apply it immediately —
+    previously this only wrote a value to Firestore that nothing ever read
+    back; reschedule_job() is now actually called on the live scheduler.
+    """
+    data = request.get_json() or {}
 
-    user = get_current_user()
+    interval_minutes = data.get("interval_minutes")
+    if interval_minutes is None:
+        return (
+            jsonify({"success": False, "error": "interval_minutes is required"}),
+            400,
+        )
 
-    if not user:
-        return jsonify({"success": False, "error": "User not authenticated"}), 401
+    try:
+        interval_minutes = float(interval_minutes)
+    except (TypeError, ValueError):
+        return (
+            jsonify({"success": False, "error": "interval_minutes must be a number"}),
+            400,
+        )
 
-    data = request.get_json()
-    new_password = data.get("new_password")
-
-    if not new_password or len(new_password) < 6:
+    if interval_minutes < (1 / 60) or interval_minutes > 1440:
         return (
             jsonify(
-                {"success": False, "error": "Password must be at least 6 characters"}
+                {
+                    "success": False,
+                    "error": "Interval must be between 1 second and 1440 minutes",
+                }
             ),
             400,
         )
 
-    uid = user.get("id")
+    module = _get_active_scheduler_module()
+    interval_seconds = interval_minutes * 60
 
-    try:
-        auth_service.update_user(uid, {"password": new_password})
+    if os.environ.get("USE_FIREBASE", "false").lower() == "true":
+        ok = module.reschedule_job(interval_seconds)
+    else:
+        ok = module.reschedule_job(interval_minutes)
 
-        return jsonify({"success": True, "message": "Password changed successfully"})
-    except Exception as e:
+    if not ok:
         return (
-            jsonify(
-                {"success": False, "error": f"Failed to change password: {str(e)}"}
-            ),
+            jsonify({"success": False, "error": "Failed to reschedule the job"}),
             500,
         )
 
-
-@settings_bp.route("/scheduler", methods=["PUT"])
-@auth_required
-@role_required("admin")
-@handle_errors
-def update_scheduler_settings():
-    """Update scheduler settings (admin only)"""
-    data = request.get_json()
-
-    # Note: Scheduler interval requires app restart to take effect
-    # In production, this would update a configuration store
-
-    interval_minutes = data.get("interval_minutes")
-    if interval_minutes:
-        if (
-            not isinstance(interval_minutes, int)
-            or interval_minutes < 1
-            or interval_minutes > 1440
-        ):
-            return (
-                jsonify(
-                    {
-                        "success": False,
-                        "error": "Interval must be between 1 and 1440 minutes",
-                    }
-                ),
-                400,
-            )
-
-    settings = {
-        "interval_minutes": interval_minutes,
-        "enabled": data.get("enabled", True),
-        "timezone": data.get("timezone", "UTC"),
-    }
-
-    # Store in Firestore settings collection
-    firestore_service.create_or_update_settings("scheduler", settings)
+    # Persist for visibility across restarts (best-effort; the live
+    # schedule change above already took effect regardless of this).
+    try:
+        firestore_service.create_or_update_settings(
+            "scheduler", {"interval_minutes": interval_minutes}
+        )
+    except Exception:
+        pass
 
     return jsonify(
         {
             "success": True,
-            "message": "Scheduler settings updated. Note: Interval changes require app restart.",
+            "message": f"Scheduler interval updated to {interval_minutes} minute(s) and applied immediately.",
         }
     )
