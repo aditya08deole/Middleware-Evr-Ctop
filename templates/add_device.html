@@ -78,90 +78,83 @@
                     <!-- EMQX Fields -->
                     <div id="emqx-fields-group" style="display: none;">
                         <div class="alert alert-info py-2">
-                            <small><i class="bi bi-info-circle"></i> EMQX uses MQTT for high-speed, persistent push streaming.</small>
+                            <small><i class="bi bi-info-circle"></i> Just fill in the device's Username, Password, and MQTT Topic below — broker connection settings are already set up and rarely need changing.</small>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_username" class="form-label">Username *</label>
+                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" required placeholder="e.g. device-EVT-XXX-001">
+                                <div class="form-text">Your device's MQTT login name</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="emqx_password" class="form-label">Password *</label>
+                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" required placeholder="Device's MQTT password">
+                            </div>
                         </div>
                         <div class="mb-3">
-                            <label for="emqx_broker_url" class="form-label">EMQX Broker Host / URL *</label>
-                            <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" value="mqtt.evaratech.com" placeholder="broker.emqx.io">
-                            <div class="form-text">Server hostname or IP of your EMQX broker</div>
+                            <label for="emqx_topic" class="form-label">MQTT Topic *</label>
+                            <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evaratech/v1/EVT-XXX-001/telemetry">
+                            <div class="form-text">The topic this device publishes its readings to</div>
                         </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="emqx_port" class="form-label">Port</label>
-                                <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="443" min="1" max="65535">
-                                <div class="form-text">443 (WebSocket+TLS, recommended) &middot; 1883 (TCP) &middot; 8883 (TCP+TLS)</div>
-                            </div>
-                            <div class="col-md-6 mb-3 d-flex align-items-end">
-                                <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" checked onchange="toggleEmqxTlsFields()">
-                                    <label class="form-check-label" for="emqx_use_tls">
-                                        <i class="bi bi-shield-lock"></i> Use SSL/TLS
-                                    </label>
+
+                        <details class="mb-3">
+                            <summary class="text-muted small" style="cursor: pointer;">Advanced broker settings (already configured — only open if this device uses a different broker)</summary>
+                            <div class="border rounded p-3 mt-2">
+                                <div class="mb-3">
+                                    <label for="emqx_broker_url" class="form-label">EMQX Broker Host / URL *</label>
+                                    <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" value="mqtt.evaratech.com" placeholder="broker.emqx.io">
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx_port" class="form-label">Port</label>
+                                        <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="443" min="1" max="65535">
+                                        <div class="form-text">443 (WebSocket+TLS) &middot; 1883 (TCP) &middot; 8883 (TCP+TLS)</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3 d-flex align-items-end">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" checked onchange="toggleEmqxTlsFields()">
+                                            <label class="form-check-label" for="emqx_use_tls">
+                                                <i class="bi bi-shield-lock"></i> Use SSL/TLS
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="emqx_transport" class="form-label">Transport</label>
+                                        <select class="form-select" id="emqx_transport" name="emqx_transport" onchange="toggleEmqxWsPathField()">
+                                            <option value="tcp">TCP (raw MQTT)</option>
+                                            <option value="websockets" selected>WebSocket</option>
+                                        </select>
+                                        <div class="form-text">WebSocket works even when a network blocks 1883/8883 but allows 443.</div>
+                                    </div>
+                                    <div class="col-md-6 mb-3" id="emqx-ws-path-group" style="display: block;">
+                                        <label for="emqx_ws_path" class="form-label">WebSocket Path</label>
+                                        <input type="text" class="form-control" id="emqx_ws_path" name="emqx_ws_path" value="/mqtt" placeholder="/mqtt">
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="emqx_qos" class="form-label">QoS</label>
+                                    <select class="form-select" id="emqx_qos" name="emqx_qos">
+                                        <option value="0">0 — At most once</option>
+                                        <option value="1" selected>1 — At least once (recommended)</option>
+                                        <option value="2">2 — Exactly once</option>
+                                    </select>
+                                </div>
+                                <div id="emqx-tls-fields" style="display: block;">
+                                    <div class="mb-3">
+                                        <label for="emqx_ca_cert_path" class="form-label">CA Certificate Path</label>
+                                        <input type="text" class="form-control" id="emqx_ca_cert_path" name="emqx_ca_cert_path" placeholder="Leave blank unless using a self-hosted broker with its own certificate">
+                                    </div>
+                                    <div class="mb-3 form-check">
+                                        <input class="form-check-input" type="checkbox" id="emqx_tls_insecure" name="emqx_tls_insecure">
+                                        <label class="form-check-label" for="emqx_tls_insecure">
+                                            Skip certificate verification (insecure — dev/test brokers only)
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="emqx_transport" class="form-label">Transport</label>
-                                <select class="form-select" id="emqx_transport" name="emqx_transport" onchange="toggleEmqxWsPathField()">
-                                    <option value="tcp">TCP (raw MQTT)</option>
-                                    <option value="websockets" selected>WebSocket</option>
-                                </select>
-                                <div class="form-text">
-                                    WebSocket is the recommended default — it works even when a network
-                                    blocks outbound 1883/8883 but allows 443 (combined with SSL/TLS above).
-                                    Switch to TCP only if your broker doesn't support WebSocket.
-                                </div>
-                            </div>
-                            <div class="col-md-6 mb-3" id="emqx-ws-path-group" style="display: block;">
-                                <label for="emqx_ws_path" class="form-label">WebSocket Path</label>
-                                <input type="text" class="form-control" id="emqx_ws_path" name="emqx_ws_path" value="/mqtt" placeholder="/mqtt">
-                                <div class="form-text">EMQX's default WS/WSS MQTT path is /mqtt</div>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="emqx_username" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" placeholder="e.g. device-EVT-XXX-001">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="emqx_password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" placeholder="Device's MQTT password">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label for="emqx_topic" class="form-label">MQTT Topic *</label>
-                                <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evaratech/v1/EVT-XXX-001/telemetry">
-                                <div class="form-text">The topic your device publishes data to</div>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="emqx_qos" class="form-label">QoS</label>
-                                <select class="form-select" id="emqx_qos" name="emqx_qos">
-                                    <option value="0">0 — At most once</option>
-                                    <option value="1" selected>1 — At least once (recommended)</option>
-                                    <option value="2">2 — Exactly once</option>
-                                </select>
-                                <div class="form-text">MQTT delivery guarantee for this subscription</div>
-                            </div>
-                        </div>
-                        <div id="emqx-tls-fields" style="display: block;">
-                            <div class="mb-3">
-                                <label for="emqx_ca_cert_path" class="form-label">CA Certificate Path</label>
-                                <input type="text" class="form-control" id="emqx_ca_cert_path" name="emqx_ca_cert_path" placeholder="/etc/ctop/certs/emqx-ca.pem (optional)">
-                                <div class="form-text">
-                                    Path (on this server) to the broker's CA certificate. Required for self-hosted
-                                    EMQX Community Edition brokers, which use a self-signed certificate by default
-                                    and will otherwise fail TLS verification.
-                                </div>
-                            </div>
-                            <div class="mb-3 form-check">
-                                <input class="form-check-input" type="checkbox" id="emqx_tls_insecure" name="emqx_tls_insecure">
-                                <label class="form-check-label" for="emqx_tls_insecure">
-                                    Skip certificate verification (insecure — dev/test brokers only)
-                                </label>
-                            </div>
-                        </div>
+                        </details>
                     </div>
                     
                     <div class="mb-3">
@@ -448,6 +441,8 @@ function toggleAddDevicePlatform() {
     const apiKeyInput = document.getElementById('api_key');
     const emqxBrokerInput = document.getElementById('emqx_broker_url');
     const emqxTopicInput = document.getElementById('emqx_topic');
+    const emqxUsernameInput = document.getElementById('emqx_username');
+    const emqxPasswordInput = document.getElementById('emqx_password');
 
     if (isEmqx) {
         tsGroup.style.display = 'none';
@@ -456,6 +451,8 @@ function toggleAddDevicePlatform() {
         apiKeyInput.removeAttribute('required');
         emqxBrokerInput.setAttribute('required', 'required');
         emqxTopicInput.setAttribute('required', 'required');
+        emqxUsernameInput.setAttribute('required', 'required');
+        emqxPasswordInput.setAttribute('required', 'required');
     } else {
         tsGroup.style.display = 'block';
         emqxGroup.style.display = 'none';
@@ -463,6 +460,8 @@ function toggleAddDevicePlatform() {
         apiKeyInput.setAttribute('required', 'required');
         emqxBrokerInput.removeAttribute('required');
         emqxTopicInput.removeAttribute('required');
+        emqxUsernameInput.removeAttribute('required');
+        emqxPasswordInput.removeAttribute('required');
     }
 }
 
@@ -657,8 +656,8 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
         showAlert('Please fill in all required common fields', 'warning');
         return;
     }
-    if (isEmqx && (!data.emqx_broker_url || !data.emqx_topic)) {
-        showAlert('Please enter EMQX Broker URL and MQTT Topic', 'warning');
+    if (isEmqx && (!data.emqx_broker_url || !data.emqx_topic || !data.emqx_username || !data.emqx_password)) {
+        showAlert('Please fill in Username, Password, and MQTT Topic for this EMQX device', 'warning');
         return;
     }
     if (!isEmqx && (!data.channel_id || !data.api_key)) {

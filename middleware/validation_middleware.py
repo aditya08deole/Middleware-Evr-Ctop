@@ -86,8 +86,12 @@ def validate_device_data(f):
                 )
 
         elif data_source == "emqx":
-            # EMQX requires broker_url and topic
-            emqx_required = ["emqx_broker_url", "emqx_topic"]
+            # EMQX requires broker_url, topic, username, and password. Broker
+            # URL has a working default in the Add Device UI (most devices
+            # share one broker), but username/password/topic are always
+            # device-specific — without them the device can never actually
+            # connect, so these are enforced here too, not just in the UI.
+            emqx_required = ["emqx_broker_url", "emqx_topic", "emqx_username", "emqx_password"]
             for field in emqx_required:
                 if field not in data or not data[field]:
                     return (

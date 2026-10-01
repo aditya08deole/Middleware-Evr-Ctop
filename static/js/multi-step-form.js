@@ -75,6 +75,8 @@ function togglePlatformFields() {
         // Add required to EMQX fields
         document.getElementById('emqx-broker-url').setAttribute('required', 'required');
         document.getElementById('emqx-topic').setAttribute('required', 'required');
+        document.getElementById('emqx-username').setAttribute('required', 'required');
+        document.getElementById('emqx-password').setAttribute('required', 'required');
     } else {
         tsFields.style.display = 'block';
         emqxFields.style.display = 'none';
@@ -86,6 +88,8 @@ function togglePlatformFields() {
         // Remove required from EMQX fields
         document.getElementById('emqx-broker-url').removeAttribute('required');
         document.getElementById('emqx-topic').removeAttribute('required');
+        document.getElementById('emqx-username').removeAttribute('required');
+        document.getElementById('emqx-password').removeAttribute('required');
     }
 }
 
@@ -239,6 +243,28 @@ function validateStep(step) {
             if (port.value && (parseInt(port.value) < 1 || parseInt(port.value) > 65535)) {
                 isValid = false;
                 port.classList.add('is-invalid');
+            }
+
+            const emqxUsername = document.getElementById('emqx-username');
+            if (!emqxUsername.value.trim()) {
+                isValid = false;
+                emqxUsername.classList.add('is-invalid');
+                const errorElement = stepElement.querySelector('[data-error="emqx_username"]');
+                if (errorElement) {
+                    errorElement.textContent = 'Username is required';
+                    errorElement.style.display = 'block';
+                }
+            }
+
+            const emqxPassword = document.getElementById('emqx-password');
+            if (!emqxPassword.value.trim()) {
+                isValid = false;
+                emqxPassword.classList.add('is-invalid');
+                const errorElement = stepElement.querySelector('[data-error="emqx_password"]');
+                if (errorElement) {
+                    errorElement.textContent = 'Password is required';
+                    errorElement.style.display = 'block';
+                }
             }
         }
     }

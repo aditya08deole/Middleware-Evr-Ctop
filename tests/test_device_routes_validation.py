@@ -92,6 +92,20 @@ def test_add_device_missing_required_emqx_field_rejected(app, client):
     assert resp.get_json()["success"] is False
 
 
+@pytest.mark.parametrize("missing_field", ["emqx_username", "emqx_password"])
+def test_add_device_missing_emqx_credentials_rejected(app, client, missing_field):
+    """Username/password are always device-specific (unlike broker_url,
+    which has a working shared default in the Add Device UI) — without
+    them the device can never actually authenticate to the broker, so
+    these are mandatory, not merely recommended."""
+    payload = dict(EMQX_PAYLOAD)
+    del payload[missing_field]
+
+    resp = client.post("/devices/", json=payload)
+    assert resp.status_code == 400
+    assert resp.get_json()["success"] is False
+
+
 def test_add_device_invalid_qos_rejected(app, client):
     payload = dict(EMQX_PAYLOAD)
     payload["emqx_qos"] = 7
