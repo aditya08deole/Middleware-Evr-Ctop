@@ -56,3 +56,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local runtime artifacts (dev server PID file)
+*.pid

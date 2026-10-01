@@ -58,6 +58,16 @@
                             {% endif %}
                         </div>
                     </div>
+                    <div class="mb-3">
+                        <label class="text-muted small">Transport</label>
+                        <div class="fw-bold">
+                            {% if device.emqx_transport == 'websockets' %}
+                                WebSocket (<code>{{ device.emqx_ws_path or '/mqtt' }}</code>)
+                            {% else %}
+                                TCP (raw MQTT)
+                            {% endif %}
+                        </div>
+                    </div>
                     {% else %}
                     <div class="mb-3">
                         <label class="text-muted small">ThingSpeak Channel ID</label>

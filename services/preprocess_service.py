@@ -1,8 +1,24 @@
 import json
+import re
 import threading
 from collections import deque
 from datetime import datetime
 from models import db, Device, ProcessedData
+
+# Matches a ThingSpeak-style positional field name (field1-field8). EMQX
+# named-key payloads get these synthesized too (see EMQXService.
+# _mqtt_message_to_feed), but that mapping is assigned from whichever keys
+# happen to be present in the first message seen after each process
+# restart — not a stable, documented contract — so a device's *_field config
+# still pointing at one of these is a strong signal of a guessed/leftover
+# mapping rather than an intentional one. See _check_emqx_field_mapping.
+_FIELDN_PATTERN = re.compile(r"^field[1-8]$")
+
+# Metadata/synthesized keys that never indicate a genuine named-key payload
+# on their own — present in every EMQX feed regardless of device schema.
+_EMQX_FEED_METADATA_KEYS = {"created_at", "entry_id"} | {
+    f"field{i}" for i in range(1, 9)
+}
 
 
 class PreprocessService:
@@ -29,6 +45,13 @@ class PreprocessService:
         # large/misconfigured window can't grow memory unbounded per device.
         self._MAX_FILTER_HISTORY = 50
 
+        # Devices already warned about a guessed EMQX field mapping (see
+        # _check_emqx_field_mapping) — logged once per device, not every
+        # 15-second tick, to avoid spamming the log for a condition that
+        # won't change tick-to-tick without a config edit.
+        self._warned_emqx_field_mapping = set()
+        self._warned_emqx_field_mapping_lock = threading.Lock()
+
     def preprocess_data(self, device_id, raw_data, device_data=None):
         """
         Preprocess raw ThingSpeak data
@@ -53,6 +76,9 @@ class PreprocessService:
 
         if not raw_data or "feeds" not in raw_data:
             return False, None, "Invalid data format: missing 'feeds'"
+
+        if device_data and device_data.get("data_source") == "emqx":
+            self._check_emqx_field_mapping(device_id, device_data, raw_data["feeds"])
 
         processed_entries = []
         skipped_count = 0
@@ -102,6 +128,72 @@ class PreprocessService:
             error = f"Preprocessing error: {str(e)}"
             self._log_preprocess(device, 0, 0, error)
             return False, None, error
+
+    def _check_emqx_field_mapping(self, device_id, device_data, feeds):
+        """
+        Warn (once per device) when an EMQX device's sensor-field config
+        (distance_field, flow_rate_field, etc.) still points at a bare
+        ThingSpeak-style 'fieldN' name while the actual MQTT payload is a
+        named-key JSON message (e.g. {"flow_rate": ..., "total_liters": ...}).
+
+        EMQXService._mqtt_message_to_feed() synthesizes a field1..field8
+        mapping for named-key payloads from whichever keys happen to be
+        present in the first message seen after each process restart
+        (alphabetically sorted) — it is NOT a stable, documented contract,
+        and a transient missing key in that first message can shift every
+        later field assignment. The feed also always carries the original
+        named keys verbatim, so the deterministic, restart-safe way to
+        configure an EMQX device is the literal JSON key name (e.g.
+        'flow_rate') rather than 'field2'. This is exactly the mismatch
+        that made EVT-EF-004 silently report FlowRate=0 while still
+        "successfully" preprocessing — field2 was actually node_id's string
+        value, not flow_rate, with nothing in the logs ever pointing at why.
+        """
+        with self._warned_emqx_field_mapping_lock:
+            if device_id in self._warned_emqx_field_mapping:
+                return
+
+        sample_feed = feeds[-1] if feeds else None
+        if not sample_feed:
+            return
+
+        named_keys = sorted(
+            k for k in sample_feed if k not in _EMQX_FEED_METADATA_KEYS
+        )
+        if not named_keys:
+            # Already in ThingSpeak-style field1..field8 format — fieldN
+            # configuration is correct and expected here, nothing to warn.
+            return
+
+        field_attrs = (
+            "distance_field",
+            "temperature_field",
+            "meter_reading_field",
+            "flow_rate_field",
+            "liters_field",
+            "tds_field",
+        )
+        guessed = [
+            attr
+            for attr in field_attrs
+            if _FIELDN_PATTERN.match(str(device_data.get(attr) or ""))
+        ]
+        if not guessed:
+            return
+
+        with self._warned_emqx_field_mapping_lock:
+            self._warned_emqx_field_mapping.add(device_id)
+
+        logger = self._get_logger()
+        logger.warning(
+            f"EMQX device {device_data.get('name', device_id)} ({device_id}): "
+            f"{', '.join(f'{attr}={device_data.get(attr)}' for attr in guessed)} "
+            f"use positional field-N names, but this device's MQTT payload has "
+            f"named keys: {named_keys}. Positional field-N assignment for "
+            f"named-key payloads is not guaranteed stable across restarts — "
+            f"reconfigure these to the literal JSON key name instead (e.g. "
+            f"flow_rate_field='flow_rate') for a deterministic mapping."
+        )
 
     def _process_feed(self, feed, device):
         """

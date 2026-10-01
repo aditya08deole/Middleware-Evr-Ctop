@@ -11,6 +11,21 @@
             </div>
             <div class="card-body">
                 <form id="device-form">
+                    <!-- Shared suggestions for every sensor-field input below. ThingSpeak
+                         devices pick field1-field8; EMQX devices instead type the literal
+                         JSON key their firmware publishes (e.g. flow_rate) since EMQX
+                         payloads are matched by key name, not position — see the
+                         per-field help text for why. -->
+                    <datalist id="field-options-list">
+                        <option value="field1"></option>
+                        <option value="field2"></option>
+                        <option value="field3"></option>
+                        <option value="field4"></option>
+                        <option value="field5"></option>
+                        <option value="field6"></option>
+                        <option value="field7"></option>
+                        <option value="field8"></option>
+                    </datalist>
                     <div class="mb-3">
                         <label for="name" class="form-label">Device ID *</label>
                         <input type="text" class="form-control" id="name" name="name" required>
@@ -67,18 +82,18 @@
                         </div>
                         <div class="mb-3">
                             <label for="emqx_broker_url" class="form-label">EMQX Broker Host / URL *</label>
-                            <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" placeholder="broker.emqx.io">
+                            <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" value="mqtt.evaratech.com" placeholder="broker.emqx.io">
                             <div class="form-text">Server hostname or IP of your EMQX broker</div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="emqx_port" class="form-label">Port</label>
-                                <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="1883" min="1" max="65535">
-                                <div class="form-text">1883 (TCP) or 8883 (SSL/TLS)</div>
+                                <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="443" min="1" max="65535">
+                                <div class="form-text">443 (WebSocket+TLS, recommended) &middot; 1883 (TCP) &middot; 8883 (TCP+TLS)</div>
                             </div>
                             <div class="col-md-6 mb-3 d-flex align-items-end">
                                 <div class="form-check mb-2">
-                                    <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" onchange="toggleEmqxTlsFields()">
+                                    <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" checked onchange="toggleEmqxTlsFields()">
                                     <label class="form-check-label" for="emqx_use_tls">
                                         <i class="bi bi-shield-lock"></i> Use SSL/TLS
                                     </label>
@@ -87,18 +102,37 @@
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
+                                <label for="emqx_transport" class="form-label">Transport</label>
+                                <select class="form-select" id="emqx_transport" name="emqx_transport" onchange="toggleEmqxWsPathField()">
+                                    <option value="tcp">TCP (raw MQTT)</option>
+                                    <option value="websockets" selected>WebSocket</option>
+                                </select>
+                                <div class="form-text">
+                                    WebSocket is the recommended default — it works even when a network
+                                    blocks outbound 1883/8883 but allows 443 (combined with SSL/TLS above).
+                                    Switch to TCP only if your broker doesn't support WebSocket.
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-3" id="emqx-ws-path-group" style="display: block;">
+                                <label for="emqx_ws_path" class="form-label">WebSocket Path</label>
+                                <input type="text" class="form-control" id="emqx_ws_path" name="emqx_ws_path" value="/mqtt" placeholder="/mqtt">
+                                <div class="form-text">EMQX's default WS/WSS MQTT path is /mqtt</div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
                                 <label for="emqx_username" class="form-label">Username</label>
-                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" placeholder="Optional">
+                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" placeholder="e.g. device-EVT-XXX-001">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="emqx_password" class="form-label">Password</label>
-                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" placeholder="Optional">
+                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" placeholder="Device's MQTT password">
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="emqx_topic" class="form-label">MQTT Topic *</label>
-                                <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evara/tank/EVARA001/data">
+                                <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evaratech/v1/EVT-XXX-001/telemetry">
                                 <div class="form-text">The topic your device publishes data to</div>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -111,7 +145,7 @@
                                 <div class="form-text">MQTT delivery guarantee for this subscription</div>
                             </div>
                         </div>
-                        <div id="emqx-tls-fields" style="display: none;">
+                        <div id="emqx-tls-fields" style="display: block;">
                             <div class="mb-3">
                                 <label for="emqx_ca_cert_path" class="form-label">CA Certificate Path</label>
                                 <input type="text" class="form-control" id="emqx_ca_cert_path" name="emqx_ca_cert_path" placeholder="/etc/ctop/certs/emqx-ca.pem (optional)">
@@ -174,17 +208,13 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="distance_field" class="form-label">Distance Field *</label>
-                                <select class="form-select field-select" id="distance_field" name="distance_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing distance data</div>
+                                <input type="text" class="form-control field-select" id="distance_field" name="distance_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. distance">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="temperature_field" class="form-label">Temperature Field *</label>
-                                <select class="form-select field-select" id="temperature_field" name="temperature_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing temperature data</div>
+                                <input type="text" class="form-control field-select" id="temperature_field" name="temperature_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. temperature">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
                         
@@ -216,17 +246,13 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="meter_reading_field" class="form-label">Meter Reading Field *</label>
-                                <select class="form-select field-select" id="meter_reading_field" name="meter_reading_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing meter reading</div>
+                                <input type="text" class="form-control field-select" id="meter_reading_field" name="meter_reading_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. total_liters">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="flow_rate_field_ef" class="form-label">Flow Rate Field *</label>
-                                <select class="form-select field-select" id="flow_rate_field_ef" name="flow_rate_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing flow rate</div>
+                                <input type="text" class="form-control field-select" id="flow_rate_field_ef" name="flow_rate_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. flow_rate">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
                         
@@ -258,17 +284,13 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="flow_rate_field_ev" class="form-label">Flow Rate Field *</label>
-                                <select class="form-select field-select" id="flow_rate_field_ev" name="flow_rate_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing flow rate</div>
+                                <input type="text" class="form-control field-select" id="flow_rate_field_ev" name="flow_rate_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. flow_rate">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="liters_field" class="form-label">Liters Field *</label>
-                                <select class="form-select field-select" id="liters_field" name="liters_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing liters dispensed</div>
+                                <input type="text" class="form-control field-select" id="liters_field" name="liters_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. liters">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
                         
@@ -299,10 +321,8 @@
                         
                         <div class="mb-3">
                             <label for="distance_field_ed" class="form-label">Distance Field (cm) *</label>
-                            <select class="form-select field-select" id="distance_field_ed" name="distance_field">
-                                <option value="" disabled selected>Select field...</option>
-                            </select>
-                            <div class="form-text">ThingSpeak field containing distance in cm</div>
+                            <input type="text" class="form-control field-select" id="distance_field_ed" name="distance_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. distance">
+                            <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                         </div>
                         
                         <div class="row">
@@ -333,17 +353,13 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="temperature_field_et" class="form-label">Temperature Field *</label>
-                                <select class="form-select field-select" id="temperature_field_et" name="temperature_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing temperature</div>
+                                <input type="text" class="form-control field-select" id="temperature_field_et" name="temperature_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. temperature">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="tds_field" class="form-label">TDS Field (ppm) *</label>
-                                <select class="form-select field-select" id="tds_field" name="tds_field">
-                                    <option value="" disabled selected>Select field...</option>
-                                </select>
-                                <div class="form-text">ThingSpeak field containing TDS in ppm</div>
+                                <input type="text" class="form-control field-select" id="tds_field" name="tds_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. tds">
+                                <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
                         
@@ -418,20 +434,10 @@
 
 {% block scripts %}
 <script>
-// field1..field8 options are identical across every sensor-field <select>
-// (distance_field, temperature_field, meter_reading_field, ...) — generate
-// them once instead of hand-duplicating <option> blocks nine times.
-function populateFieldSelectOptions() {
-    document.querySelectorAll('select.field-select').forEach(select => {
-        for (let i = 1; i <= 8; i++) {
-            const option = document.createElement('option');
-            option.value = `field${i}`;
-            option.textContent = `Field ${i}`;
-            select.appendChild(option);
-        }
-    });
-}
-document.addEventListener('DOMContentLoaded', populateFieldSelectOptions);
+// Sensor-field inputs (distance_field, temperature_field, meter_reading_field,
+// ...) are free-text, backed by the shared #field-options-list datalist for
+// field1-field8 suggestions — see that datalist's comment for why these
+// aren't a fixed <select> anymore.
 
 // Toggle between ThingSpeak and EMQX input fields
 function toggleAddDevicePlatform() {
@@ -470,10 +476,30 @@ function toggleEmqxTlsFields() {
 
     const portInput = document.getElementById('emqx_port');
     const currentPort = portInput.value;
-    if (useTls && currentPort === '1883') {
-        portInput.value = '8883';
-    } else if (!useTls && currentPort === '8883') {
-        portInput.value = '1883';
+    const isWebsocket = document.getElementById('emqx_transport').value === 'websockets';
+    if (isWebsocket) {
+        // WebSocket deployments are almost always TLS-terminated on 443
+        // (that's the whole point — blending in with ordinary HTTPS).
+        if (useTls && currentPort === '8083') portInput.value = '443';
+        else if (!useTls && currentPort === '443') portInput.value = '8083';
+    } else {
+        if (useTls && currentPort === '1883') portInput.value = '8883';
+        else if (!useTls && currentPort === '8883') portInput.value = '1883';
+    }
+}
+
+function toggleEmqxWsPathField() {
+    const isWebsocket = document.getElementById('emqx_transport').value === 'websockets';
+    document.getElementById('emqx-ws-path-group').style.display = isWebsocket ? 'block' : 'none';
+
+    // Nudge the port toward the convention for whichever transport is now
+    // selected, same spirit as toggleEmqxTlsFields()'s TLS<->port nudge.
+    const portInput = document.getElementById('emqx_port');
+    const useTls = document.getElementById('emqx_use_tls').checked;
+    if (isWebsocket && portInput.value === '1883') {
+        portInput.value = useTls ? '443' : '8083';
+    } else if (!isWebsocket && (portInput.value === '443' || portInput.value === '8083')) {
+        portInput.value = useTls ? '8883' : '1883';
     }
 }
 
@@ -564,6 +590,8 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
         data.emqx_qos = parseInt(formData.get('emqx_qos')) || 1;
         data.emqx_ca_cert_path = formData.get('emqx_ca_cert_path') || null;
         data.emqx_tls_insecure = data.emqx_use_tls ? document.getElementById('emqx_tls_insecure').checked : false;
+        data.emqx_transport = document.getElementById('emqx_transport').value || 'tcp';
+        data.emqx_ws_path = data.emqx_transport === 'websockets' ? (formData.get('emqx_ws_path') || '/mqtt') : null;
     }
     
     // Add device type specific fields

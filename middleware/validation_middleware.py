@@ -176,6 +176,23 @@ def validate_device_data(f):
                         400,
                     )
 
+            # Validate transport if provided (tcp = raw MQTT, websockets = MQTT
+            # framed inside a WS/WSS connection -- the way through networks
+            # that block 1883/8883 but allow 443).
+            if data.get("emqx_transport") is not None and data["emqx_transport"] not in (
+                "tcp",
+                "websockets",
+            ):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "emqx_transport must be 'tcp' or 'websockets'",
+                        }
+                    ),
+                    400,
+                )
+
             # emqx_tls_insecure (skip certificate verification) must only be
             # used together with TLS — it's meaningless, and easy to mistake
             # for "secure" otherwise, when TLS itself is off.

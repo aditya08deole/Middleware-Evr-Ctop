@@ -65,6 +65,8 @@ ALLOWED_DEVICE_UPDATE_FIELDS = {
     "emqx_qos",
     "emqx_ca_cert_path",
     "emqx_tls_insecure",
+    "emqx_transport",
+    "emqx_ws_path",
     "consecutive_failures",
     "needs_attention",
     "last_ctop_attempt_time",

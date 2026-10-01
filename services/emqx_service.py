@@ -86,6 +86,19 @@ class EMQXService:
         tls_insecure = device_data.get("emqx_tls_insecure", False)
         ca_cert_path = device_data.get("emqx_ca_cert_path") or None
 
+        # Transport: 'tcp' (default, raw MQTT) or 'websockets' (MQTT framed
+        # inside a WebSocket connection — typically combined with
+        # emqx_use_tls=True on port 443 as 'wss'). Many corporate/ISP
+        # networks block outbound 1883/8883 entirely while leaving 443 open
+        # (indistinguishable from ordinary HTTPS traffic at the firewall) —
+        # websockets is the standard way to reach an EMQX broker from such a
+        # network without the broker needing any public IP/port changes,
+        # since EMQX exposes a WS/WSS listener out of the box.
+        transport = device_data.get("emqx_transport") or "tcp"
+        if transport not in ("tcp", "websockets"):
+            transport = "tcp"
+        ws_path = device_data.get("emqx_ws_path") or "/mqtt"
+
         try:
             qos = int(device_data.get("emqx_qos", 1))
         except (ValueError, TypeError):
@@ -130,7 +143,10 @@ class EMQXService:
                 callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                 client_id=client_id,
                 clean_session=False,  # Persist session across reconnects for QoS 1 reliability
+                transport=transport,
             )
+            if transport == "websockets":
+                client.ws_set_options(path=ws_path)
 
             # Set credentials
             if username:
@@ -287,7 +303,8 @@ class EMQXService:
 
             logger.info(
                 f"[EMQX] Device {device_name} ({device_id}): "
-                f"MQTT client started → {broker_url}:{port} topic='{topic}'"
+                f"MQTT client started → {broker_url}:{port} topic='{topic}' "
+                f"(transport={transport}{', tls' if use_tls else ''})"
             )
             return True
 

@@ -4,18 +4,10 @@ let currentStep = 1;
 const totalSteps = 5;
 const formData = {};
 
-// field1..field8 options are identical across every sensor-field <select> —
-// generate them once instead of hand-duplicating <option> blocks per select.
-function populateFieldSelectOptions() {
-    document.querySelectorAll('select.field-select').forEach(select => {
-        for (let i = 1; i <= 8; i++) {
-            const option = document.createElement('option');
-            option.value = `field${i}`;
-            option.textContent = `Field ${i}`;
-            select.appendChild(option);
-        }
-    });
-}
+// Sensor-field inputs (distance-field, temperature-field, meter-reading-field,
+// ...) are free-text, backed by the shared #field-options-list datalist for
+// field1-field8 suggestions (see that datalist's comment in the template for
+// why these aren't a fixed <select> anymore).
 
 // Show the sensor-field group for the selected device type and mark its
 // fields required (mirrors add_device.html's showDeviceFields()).
@@ -59,7 +51,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // Initialize platform toggle state
     togglePlatformFields();
-    populateFieldSelectOptions();
 
     const deviceTypeSelect = document.getElementById('device-type');
     if (deviceTypeSelect) {
@@ -108,10 +99,29 @@ function toggleEmqxTlsFieldsMulti() {
 
     const portInput = document.getElementById('emqx-port');
     const currentPort = portInput.value;
-    if (useTls && currentPort === '1883') {
-        portInput.value = '8883';
-    } else if (!useTls && currentPort === '8883') {
-        portInput.value = '1883';
+    const isWebsocket = document.getElementById('emqx-transport').value === 'websockets';
+    if (isWebsocket) {
+        if (useTls && currentPort === '8083') portInput.value = '443';
+        else if (!useTls && currentPort === '443') portInput.value = '8083';
+    } else {
+        if (useTls && currentPort === '1883') portInput.value = '8883';
+        else if (!useTls && currentPort === '8883') portInput.value = '1883';
+    }
+}
+
+// Mirrors toggleEmqxTlsFieldsMulti()'s port nudge, for the transport switch
+// instead of the TLS switch. See add_device.html's toggleEmqxWsPathField()
+// for why WebSocket + TLS together default to port 443.
+function toggleEmqxWsPathFieldMulti() {
+    const isWebsocket = document.getElementById('emqx-transport').value === 'websockets';
+    document.getElementById('emqx-ws-path-group-multi').style.display = isWebsocket ? 'block' : 'none';
+
+    const portInput = document.getElementById('emqx-port');
+    const useTls = document.getElementById('emqx-use-tls').checked;
+    if (isWebsocket && portInput.value === '1883') {
+        portInput.value = useTls ? '443' : '8083';
+    } else if (!isWebsocket && (portInput.value === '443' || portInput.value === '8083')) {
+        portInput.value = useTls ? '8883' : '1883';
     }
 }
 
@@ -369,6 +379,10 @@ function saveStepData(step) {
             formData.emqx_ca_cert_path = formData.emqx_ca_cert_path || null;
             // emqx_tls_insecure only means anything alongside TLS itself
             formData.emqx_tls_insecure = formData.emqx_use_tls ? !!formData.emqx_tls_insecure : false;
+            // emqx_ws_path only means anything alongside transport=websockets
+            formData.emqx_transport = formData.emqx_transport || 'tcp';
+            formData.emqx_ws_path =
+                formData.emqx_transport === 'websockets' ? (formData.emqx_ws_path || '/mqtt') : null;
         }
     }
 }
@@ -406,6 +420,7 @@ function populateReview() {
         reviewItems.push(
             { label: 'Broker URL', value: formData.emqx_broker_url || 'Not provided' },
             { label: 'Port', value: formData.emqx_port || '1883' },
+            { label: 'Transport', value: formData.emqx_transport === 'websockets' ? `WebSocket (${formData.emqx_ws_path || '/mqtt'})` : 'TCP (raw MQTT)' },
             { label: 'Username', value: formData.emqx_username || 'None' },
             { label: 'Password', value: formData.emqx_password ? '••••••••••••' : 'None' },
             { label: 'MQTT Topic', value: formData.emqx_topic || 'Not provided' },

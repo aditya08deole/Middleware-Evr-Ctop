@@ -442,5 +442,84 @@ class TestEMQXSubscribeAck(unittest.TestCase):
         mock_client.on_subscribe(mock_client, None, 1, [128])
 
 
+class TestEMQXTransport(unittest.TestCase):
+    """emqx_transport='websockets' (MQTT over WS/WSS) — the way through
+    networks that block outbound 1883/8883 but allow 443, since EMQX
+    exposes a WS/WSS listener by default. Default transport stays 'tcp' so
+    every existing device's behavior is unchanged."""
+
+    def setUp(self):
+        self.svc = EMQXService()
+        self.base_device = {
+            "name": "Tank 1",
+            "emqx_broker_url": "broker.example.com",
+            "emqx_topic": "evara/tank/1/data",
+        }
+
+    @patch("paho.mqtt.client.Client")
+    def test_default_transport_is_tcp_and_skips_ws_set_options(self, MockClient):
+        mock_client = make_mock_mqtt_client()
+        MockClient.return_value = mock_client
+
+        self.svc.subscribe_device("dev1", self.base_device)
+
+        self.assertEqual(MockClient.call_args.kwargs["transport"], "tcp")
+        mock_client.ws_set_options.assert_not_called()
+
+    @patch("paho.mqtt.client.Client")
+    def test_websockets_transport_sets_default_path(self, MockClient):
+        mock_client = make_mock_mqtt_client()
+        MockClient.return_value = mock_client
+
+        device = {**self.base_device, "emqx_transport": "websockets"}
+        self.svc.subscribe_device("dev1", device)
+
+        self.assertEqual(MockClient.call_args.kwargs["transport"], "websockets")
+        mock_client.ws_set_options.assert_called_once_with(path="/mqtt")
+
+    @patch("paho.mqtt.client.Client")
+    def test_websockets_transport_honors_custom_path(self, MockClient):
+        mock_client = make_mock_mqtt_client()
+        MockClient.return_value = mock_client
+
+        device = {
+            **self.base_device,
+            "emqx_transport": "websockets",
+            "emqx_ws_path": "/custom-mqtt-path",
+        }
+        self.svc.subscribe_device("dev1", device)
+
+        mock_client.ws_set_options.assert_called_once_with(path="/custom-mqtt-path")
+
+    @patch("paho.mqtt.client.Client")
+    def test_unknown_transport_falls_back_to_tcp(self, MockClient):
+        mock_client = make_mock_mqtt_client()
+        MockClient.return_value = mock_client
+
+        device = {**self.base_device, "emqx_transport": "carrier-pigeon"}
+        self.svc.subscribe_device("dev1", device)
+
+        self.assertEqual(MockClient.call_args.kwargs["transport"], "tcp")
+        mock_client.ws_set_options.assert_not_called()
+
+    @patch("paho.mqtt.client.Client")
+    def test_websockets_combines_with_tls(self, MockClient):
+        """The real-world case this exists for: wss:// on port 443."""
+        mock_client = make_mock_mqtt_client()
+        MockClient.return_value = mock_client
+
+        device = {
+            **self.base_device,
+            "emqx_transport": "websockets",
+            "emqx_use_tls": True,
+            "emqx_port": 443,
+        }
+        self.svc.subscribe_device("dev1", device)
+
+        self.assertEqual(MockClient.call_args.kwargs["transport"], "websockets")
+        mock_client.ws_set_options.assert_called_once_with(path="/mqtt")
+        mock_client.tls_set.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

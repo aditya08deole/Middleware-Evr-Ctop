@@ -43,6 +43,12 @@ class DeviceModel:
     emqx_qos: int = 1
     emqx_ca_cert_path: Optional[str] = None
     emqx_tls_insecure: bool = False
+    # 'tcp' (default, raw MQTT) or 'websockets' (MQTT over WS/WSS — the way
+    # through networks that block outbound 1883/8883 but allow 443, since
+    # EMQX exposes a WS/WSS listener by default). emqx_ws_path only applies
+    # when emqx_transport == 'websockets' (EMQX's default path is '/mqtt').
+    emqx_transport: str = "tcp"
+    emqx_ws_path: Optional[str] = None
 
     # CTOP delivery health tracking (see utils/scheduler_firestore.py /
     # utils/scheduler.py process_device()): consecutive_failures counts
@@ -88,6 +94,8 @@ class DeviceModel:
             "emqx_qos": self.emqx_qos,
             "emqx_ca_cert_path": self.emqx_ca_cert_path,
             "emqx_tls_insecure": self.emqx_tls_insecure,
+            "emqx_transport": self.emqx_transport,
+            "emqx_ws_path": self.emqx_ws_path,
             "consecutive_failures": self.consecutive_failures,
             "needs_attention": self.needs_attention,
             "last_ctop_attempt_time": self.last_ctop_attempt_time,
@@ -127,6 +135,8 @@ class DeviceModel:
             emqx_qos=data.get("emqx_qos", 1),
             emqx_ca_cert_path=data.get("emqx_ca_cert_path"),
             emqx_tls_insecure=data.get("emqx_tls_insecure", False),
+            emqx_transport=data.get("emqx_transport", "tcp"),
+            emqx_ws_path=data.get("emqx_ws_path"),
             consecutive_failures=data.get("consecutive_failures", 0),
             needs_attention=data.get("needs_attention", False),
             last_ctop_attempt_time=data.get("last_ctop_attempt_time"),

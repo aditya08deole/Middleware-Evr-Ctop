@@ -121,6 +121,8 @@ def add_device():
         emqx_qos=encrypted_data.get("emqx_qos", 1),
         emqx_ca_cert_path=encrypted_data.get("emqx_ca_cert_path"),
         emqx_tls_insecure=encrypted_data.get("emqx_tls_insecure", False),
+        emqx_transport=encrypted_data.get("emqx_transport", "tcp"),
+        emqx_ws_path=encrypted_data.get("emqx_ws_path"),
     )
 
     try:
@@ -268,6 +270,8 @@ def update_device(device_id):
             "emqx_qos",
             "emqx_ca_cert_path",
             "emqx_tls_insecure",
+            "emqx_transport",
+            "emqx_ws_path",
         ]
         updates = {k: data[k] for k in allowed_fields if k in data}
 
