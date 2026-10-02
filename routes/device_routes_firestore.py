@@ -410,6 +410,7 @@ def _sync_device_data(device_id, device):
     # Step 4: Send each payload to CTOP
     results = []
     latest_entry_id = last_entry_id
+    last_send_error = None
 
     for i, payload in enumerate(new_transformed_data):
         result = ctop_service.send_to_ctop(device_id, device, payload=payload)
@@ -418,12 +419,33 @@ def _sync_device_data(device_id, device):
             latest_entry_id = str(
                 new_processed_data[i].get("entry_id", latest_entry_id)
             )
+        else:
+            last_send_error = result.get("error")
 
-    # Update Local Mirror Cache (0 Firebase Writes - will sync back later)
+    # This previously marked last_status="success" and send_success=True
+    # unconditionally, regardless of whether any of the sends above actually
+    # succeeded — a manual Sync/Fetch (or "Sync All Devices") click reported
+    # "success" to the user even when CTOP rejected every single payload
+    # (e.g. the 503s during a CTOP outage), while the periodic scheduler
+    # correctly showed "error" for the same device seconds later. Compute
+    # the real outcome the same way utils/scheduler_firestore.py's
+    # process_device() does.
+    success_count = sum(1 for r in results if r.get("success"))
+    final_status = "success" if success_count > 0 else "error"
+
     local_device_store.update_entry_id(
-        device_id, latest_entry_id, last_status="success"
+        device_id, latest_entry_id, last_status=final_status
     )
-    local_device_store.increment_device_stats(device_id, send_success=True)
+    if final_status == "error" and last_send_error:
+        local_device_store.update_device_fields(
+            device_id, {"last_error": last_send_error}
+        )
+    local_device_store.increment_device_stats(
+        device_id, send_success=success_count > 0
+    )
+
+    if success_count == 0:
+        return False, last_send_error or "CTOP rejected all payloads", results
 
     return True, None, results
 
