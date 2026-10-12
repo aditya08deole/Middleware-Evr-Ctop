@@ -525,6 +525,120 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--ios-red);
 }
 
+/* Compact "Device Status" donut — small footprint, thick ring (see
+   cutout: '35%' in dashboard.html's Chart.js config) so it reads clearly
+   even at this size, with the total overlaid in the hole and a row of
+   clickable legend chips underneath that double as the same table filters
+   as the other stat tiles. */
+.status-donut-wrap {
+    position: relative;
+    width: 92px;
+    height: 92px;
+    margin: 0.25rem auto 0.85rem;
+}
+
+.status-donut-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.status-donut-center span {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.status-donut-center small {
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.status-donut-legend {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.donut-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(142, 142, 147, 0.08);
+    border: 0.5px solid rgba(142, 142, 147, 0.18);
+    border-radius: var(--radius-ios-pill);
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: all var(--spring-snappy);
+}
+
+.donut-legend-item:hover {
+    background: #ffffff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+.donut-legend-item strong {
+    color: var(--text-primary);
+}
+
+.donut-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.donut-dot-success { background: var(--ios-green); }
+.donut-dot-danger { background: var(--ios-red); }
+.donut-dot-warning { background: var(--ios-orange); }
+
+/* Icon chip above each stat tile's label — gives the row a visual anchor
+   instead of four identical blocks of plain numbers, and color-codes each
+   tile to match the status language used in the table below. */
+.stats-card-icon {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 0.75rem;
+    border-radius: var(--radius-ios-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+}
+
+.stats-card-icon-primary { background: var(--ios-blue-bg); color: var(--ios-blue); }
+.stats-card-icon-success { background: var(--ios-green-bg); color: var(--ios-green-dark); }
+.stats-card-icon-indigo { background: rgba(88, 86, 214, 0.11); color: var(--ios-indigo); }
+.stats-card-icon-danger { background: var(--ios-red-bg); color: var(--ios-red); }
+
+/* Stat tiles double as shortcuts into the device filter pills below —
+   signal that with a pointer cursor and a visible focus ring, and give
+   the press itself a little feedback on top of the existing hover lift. */
+.stats-card-clickable {
+    cursor: pointer;
+}
+
+.stats-card-clickable:active {
+    transform: translateY(0) scale(0.985);
+}
+
+.stats-card-clickable:focus-visible {
+    outline: 2.5px solid var(--ios-blue);
+    outline-offset: 3px;
+}
+
 /* Realtime pulse animation on stats */
 .stat-glow {
     animation: liquidStatPulse 1s cubic-bezier(0.22, 1, 0.36, 1);
@@ -553,6 +667,42 @@ h1, h2, h3, h4, h5, h6 {
     overflow-x: auto;  /* Enable horizontal scroll so rightmost columns are accessible */
     overflow-y: visible; /* Don't clip bottom rows */
     min-height: 300px;  /* Ensure panel has visible height even when few devices */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+
+.table-responsive::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.5);
+    border-radius: var(--radius-ios-pill);
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.7);
+}
+
+/* Skeleton rows shown while the first /api/local-logs poll is in flight —
+   mirrors the real row's column widths so there's no layout jump when
+   RealtimeDashboard.updateDevices() swaps these out for actual data. */
+.skeleton-pill {
+    display: inline-block;
+    height: 14px;
+    border-radius: var(--radius-ios-pill);
+    background: linear-gradient(90deg, rgba(226, 232, 240, 0.5) 25%, rgba(226, 232, 240, 0.9) 37%, rgba(226, 232, 240, 0.5) 63%);
+    background-size: 400% 100%;
+    animation: skeletonShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeletonShimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
 .table {
@@ -1033,6 +1183,17 @@ h1, h2, h3, h4, h5, h6 {
     font-weight: 700;
     color: var(--text-primary);
     font-size: 0.875rem;
+}
+
+/* Recessed toolbar strip (search + platform filter) — an inset "well"
+   instead of the controls floating directly on the card body, matching the
+   same inset-grouped feel as .review-section and .form-control. */
+.dashboard-toolbar {
+    background: rgba(248, 250, 252, 0.6);
+    border: 0.5px solid rgba(226, 232, 240, 0.7);
+    border-radius: var(--radius-ios-lg);
+    padding: 0.75rem 1rem;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 /* Device Filter Pills */

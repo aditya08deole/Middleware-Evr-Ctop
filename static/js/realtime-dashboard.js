@@ -187,7 +187,6 @@ class RealtimeDashboard {
     updateStats(stats) {
         const elements = {
             'total-devices': stats.total_devices,
-            'active-devices': stats.active_devices,
             'total-logs': stats.total_logs,
             'error-logs': stats.error_logs
         };
@@ -260,7 +259,11 @@ class RealtimeDashboard {
         if (elError) elError.textContent = countError;
         const elInactive = document.getElementById('filter-count-inactive');
         if (elInactive) elInactive.textContent = countInactive;
-        
+
+        if (typeof window.updateStatusDonut === 'function') {
+            window.updateStatusDonut(countActive, countError, countInactive);
+        }
+
         if (devices.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No devices registered. <a href="/add-device" class="fw-semibold">Add your first device</a></td></tr>';
             this.knownDeviceIds.clear();

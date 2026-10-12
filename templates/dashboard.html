@@ -8,7 +8,10 @@
             <h2 style="font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em;">
                 <i class="bi bi-speedometer2" style="color: var(--primary-color);"></i> Dashboard
             </h2>
-            <p class="text-muted mb-0" style="font-size: 0.875rem; letter-spacing: 0.02em;">Monitor and manage your IoT devices</p>
+            <p class="text-muted mb-0 d-flex align-items-center" style="font-size: 0.875rem; letter-spacing: 0.02em;">
+                <span class="status-indicator online" aria-hidden="true"></span>
+                Monitor and manage your IoT devices &mdash; updating live
+            </p>
         </div>
     </div>
 </div>
@@ -16,25 +19,49 @@
 <!-- Stats Cards -->
 <div class="row mb-4" id="stats">
     <div class="col-md-3">
-        <div class="stats-card text-center">
+        <div class="stats-card stats-card-clickable text-center" role="button" tabindex="0"
+             onclick="filterDevices('all')" aria-label="Show all devices in the table below">
+            <div class="stats-card-icon stats-card-icon-primary"><i class="bi bi-hdd-stack"></i></div>
             <div class="card-title">Total Devices</div>
             <h2 id="total-devices">-</h2>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="stats-card text-center text-success">
-            <div class="card-title">Active Devices</div>
-            <h2 id="active-devices">-</h2>
+        <div class="stats-card text-center">
+            <div class="card-title">Device Status</div>
+            <div class="status-donut-wrap">
+                <canvas id="status-donut-chart" width="92" height="92"
+                        role="img" aria-label="Donut chart of devices by status: active, error, inactive"></canvas>
+                <div class="status-donut-center">
+                    <span id="donut-total">-</span>
+                    <small>devices</small>
+                </div>
+            </div>
+            <div class="status-donut-legend">
+                <button type="button" class="donut-legend-item" onclick="filterDevices('active')" title="Show active devices">
+                    <span class="donut-dot donut-dot-success"></span>Active <strong id="donut-count-active">0</strong>
+                </button>
+                <button type="button" class="donut-legend-item" onclick="filterDevices('error')" title="Show devices with errors">
+                    <span class="donut-dot donut-dot-danger"></span>Error <strong id="donut-count-error">0</strong>
+                </button>
+                <button type="button" class="donut-legend-item" onclick="filterDevices('inactive')" title="Show inactive devices">
+                    <span class="donut-dot donut-dot-warning"></span>Inactive <strong id="donut-count-inactive">0</strong>
+                </button>
+            </div>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="stats-card text-center">
+        <div class="stats-card stats-card-clickable text-center" role="button" tabindex="0"
+             onclick="location.href='/logs'" aria-label="View all logs">
+            <div class="stats-card-icon stats-card-icon-indigo"><i class="bi bi-journal-text"></i></div>
             <div class="card-title">Total Logs</div>
             <h2 id="total-logs">-</h2>
         </div>
     </div>
     <div class="col-md-3">
-        <div class="stats-card text-center text-danger">
+        <div class="stats-card stats-card-clickable text-center text-danger" role="button" tabindex="0"
+             onclick="filterDevices('error')" aria-label="Filter table to devices with errors">
+            <div class="stats-card-icon stats-card-icon-danger"><i class="bi bi-exclamation-triangle"></i></div>
             <div class="card-title">Error Logs</div>
             <h2 id="error-logs">-</h2>
         </div>
@@ -78,7 +105,7 @@
                 </div>
 
                 <!-- Search / platform filter toolbar -->
-                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                <div class="dashboard-toolbar d-flex flex-wrap align-items-center gap-2 mb-3">
                     <div class="input-group input-group-sm" style="max-width: 260px;">
                         <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
                         <input type="text" class="form-control" id="device-search" placeholder="Search devices by name...">
@@ -117,8 +144,32 @@
                             </tr>
                         </thead>
                         <tbody id="devices-body">
-                            <tr>
-                                <td colspan="7" class="text-center">Loading devices...</td>
+                            <tr class="skeleton-row">
+                                <td><span class="skeleton-pill" style="width:16px; height:16px; border-radius:4px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:130px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:84px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:100px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:72px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:112px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:92px;"></span></td>
+                            </tr>
+                            <tr class="skeleton-row">
+                                <td><span class="skeleton-pill" style="width:16px; height:16px; border-radius:4px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:110px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:84px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:100px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:72px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:112px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:92px;"></span></td>
+                            </tr>
+                            <tr class="skeleton-row">
+                                <td><span class="skeleton-pill" style="width:16px; height:16px; border-radius:4px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:140px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:84px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:100px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:72px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:112px;"></span></td>
+                                <td><span class="skeleton-pill" style="width:92px;"></span></td>
                             </tr>
                         </tbody>
                     </table>
@@ -135,8 +186,64 @@
 <script>
 let devices = [];
 
-// Note: loadStats, loadDevices, renderDevices, loadRecentLogs, and renderLogs 
+// Note: loadStats, loadDevices, renderDevices, loadRecentLogs, and renderLogs
 // are now handled by RealtimeDashboard in static/js/realtime-dashboard.js
+
+// Compact "Device Status" donut (replaces the old plain "Active Devices"
+// number, which only ever counted the is_active admin flag — so it said
+// "9 active" even when every device's real last_status was error/inactive).
+// Kept deliberately small/thick per request, not the full-size Analytics
+// section that existed earlier and was removed — this lives inside one
+// stat-card tile instead of its own section.
+let statusDonutChart = null;
+
+function initStatusDonutChart() {
+    const canvas = document.getElementById('status-donut-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    statusDonutChart = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: ['Active', 'Error', 'Inactive'],
+            datasets: [{
+                data: [0, 0, 0],
+                backgroundColor: ['#34C759', '#FF3B30', '#FF9500'],
+                borderColor: 'rgba(255, 255, 255, 0.9)',
+                borderWidth: 2,
+                hoverOffset: 4
+            }]
+        },
+        options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            cutout: '35%',
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.parsed}` } }
+            },
+            animation: { duration: 400 }
+        }
+    });
+}
+initStatusDonutChart();
+
+// Called by RealtimeDashboard.updateDevices() every poll with the exact
+// same active/error/inactive counts driving the filter pills below, so the
+// donut can never disagree with the table it's summarizing.
+window.updateStatusDonut = function (active, error, inactive) {
+    const totalEl = document.getElementById('donut-total');
+    if (totalEl) totalEl.textContent = active + error + inactive;
+    const activeEl = document.getElementById('donut-count-active');
+    if (activeEl) activeEl.textContent = active;
+    const errorEl = document.getElementById('donut-count-error');
+    if (errorEl) errorEl.textContent = error;
+    const inactiveEl = document.getElementById('donut-count-inactive');
+    if (inactiveEl) inactiveEl.textContent = inactive;
+
+    if (statusDonutChart) {
+        statusDonutChart.data.datasets[0].data = [active, error, inactive];
+        statusDonutChart.update();
+    }
+};
 
 function fetchDevice(deviceId) {
     showLoading();
@@ -332,6 +439,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.dashboard) window.dashboard.setPlatformFilter(platformFilter.value);
         });
     }
+
+    // Stat tiles are role="button" divs (so the "click to filter" affordance
+    // works visually alongside the existing .stats-card hover/CSS), which
+    // means keyboard activation (Enter/Space) isn't free the way it would be
+    // on a real <button> — wire it up so the tiles are keyboard-operable too.
+    document.querySelectorAll('.stats-card-clickable').forEach(card => {
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                card.click();
+            }
+        });
+    });
 
     document.querySelectorAll('.sortable-col').forEach(th => {
         th.style.cursor = 'pointer';
