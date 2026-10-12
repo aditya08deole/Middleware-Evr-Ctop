@@ -289,6 +289,17 @@ class LocalDeviceStore:
             devices = fs.list_devices(limit=10000)  # Support massive scale
 
             with self._lock:
+                # Devices deleted in Firestore since the last sync must be
+                # purged from the mirror too — otherwise they linger forever
+                # as zombie rows (still "is_active": true, frozen at whatever
+                # last_status they had when deleted) that never get polled by
+                # the scheduler but still show up to anything reading the
+                # SQLite mirror directly (e.g. device-count reports), out of
+                # sync with what the live app actually tracks.
+                removed_ids = set(self._devices.keys()) - {
+                    d.get("id") for d in devices
+                }
+
                 new_devices = {}
                 for device in devices:
                     did = device.get("id")
@@ -318,6 +329,7 @@ class LocalDeviceStore:
                     self._dirty_devices.add(did)
 
                 self._devices = new_devices
+                self._dirty_devices.update(removed_ids)
                 self._meta["last_synced_from_firebase"] = datetime.now(
                     timezone.utc
                 ).isoformat()
