@@ -36,6 +36,7 @@ ALLOWED_DEVICE_UPDATE_FIELDS = {
     "api_key",
     "ctop_url_1",
     "ctop_url_2",
+    "ctop_targets",
     "auth_token",
     "latitude",
     "longitude",

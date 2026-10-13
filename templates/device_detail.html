@@ -138,9 +138,9 @@
         <!-- Activity Chart & Quick Actions -->
         <div class="col-lg-8 mb-4">
             <!-- Reading Trend Sparkline -->
-            <div class="card shadow-sm mb-4">
+            <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-graph-up-arrow"></i> Reading Trend</h5>
+                    <h5 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-graph-up-arrow"></i></span>Reading Trend</h5>
                     <span class="text-muted small" id="reading-trend-metric-label"></span>
                 </div>
                 <div class="card-body">
@@ -151,9 +151,9 @@
             </div>
 
             <!-- Activity Chart -->
-            <div class="card shadow-sm mb-4">
+            <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> Activity (Last 30 Days)</h5>
+                    <h5 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-graph-up"></i></span>Activity (Last 30 Days)</h5>
                 </div>
                 <div class="card-body">
                     <canvas id="deviceActivityChart" height="200"></canvas>
@@ -161,9 +161,9 @@
             </div>
 
             <!-- Quick Actions -->
-            <div class="card shadow-sm mb-4">
+            <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-lightning"></i> Quick Actions</h5>
+                    <h5 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-lightning"></i></span>Quick Actions</h5>
                 </div>
                 <div class="card-body">
                     <div class="row g-3">
@@ -187,9 +187,9 @@
             </div>
             
             <!-- Recent Logs -->
-            <div class="card shadow-sm">
+            <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Logs</h5>
+                    <h5 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-clock-history"></i></span>Recent Logs</h5>
                     <button class="btn btn-sm btn-outline-primary" onclick="viewAllLogs()">View All</button>
                 </div>
                 <div class="card-body">
@@ -229,6 +229,38 @@
             </div>
         </div>
     </div>
+
+    <!-- CTOP Delivery Endpoints -->
+    <div class="card mt-2 mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-1">
+            <h5 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-diagram-3"></i></span>CTOP Delivery Endpoints</h5>
+            <span class="text-muted small">Sent to every endpoint below &mdash; delivery counts as a success if any one of them accepts it</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-2">
+                <div class="col-md-6">
+                    <label for="ctop-url-1-input" class="form-label">Primary URL</label>
+                    <input type="url" class="form-control form-control-sm" id="ctop-url-1-input" placeholder="https://ctop.iiit.ac.in/api/nodes/create-cin/391">
+                </div>
+                <div class="col-md-6">
+                    <label for="ctop-url-2-input" class="form-label">Secondary URL <span class="text-muted">(optional)</span></label>
+                    <input type="url" class="form-control form-control-sm" id="ctop-url-2-input" placeholder="Optional">
+                </div>
+            </div>
+
+            <label class="form-label">Additional Targets <span class="text-muted">(by registered host — see Settings)</span></label>
+            <div id="ctop-targets-list" class="mb-2"></div>
+            <button type="button" class="btn btn-sm btn-outline-primary mb-3" onclick="addCtopTargetRow()">
+                <i class="bi bi-plus-lg"></i> Add Target
+            </button>
+
+            <div>
+                <button type="button" class="btn btn-primary" onclick="saveCtopEndpoints()">
+                    <i class="bi bi-save"></i> Save Endpoints
+                </button>
+            </div>
+        </div>
+    </div>
     {% else %}
     <div class="alert alert-danger">
         <i class="bi bi-exclamation-triangle"></i> Device not found
@@ -240,7 +272,134 @@
 document.addEventListener('DOMContentLoaded', () => {
     loadDeviceActivityChart();
     loadReadingTrend();
+    loadCtopEndpointsCard();
 });
+
+// --- CTOP Delivery Endpoints --------------------------------------------
+
+let ctopHostsRegistry = [];
+
+// escapeHtmlAttr kept as its own name (call sites below use it) but now
+// delegates to the single shared implementation in static/js/dom-utils.js
+// (loaded globally via base.html) instead of carrying its own copy.
+function escapeHtmlAttr(value) {
+    return escapeHtml(value);
+}
+
+async function loadCtopEndpointsCard() {
+    const deviceId = '{{ device.id if device else "" }}';
+    if (!deviceId) return;
+
+    try {
+        const [deviceResp, hostsResp] = await Promise.all([
+            fetch(`/devices/${deviceId}`),
+            fetch('/settings/ctop-hosts')
+        ]);
+        const deviceResult = await deviceResp.json();
+        const hostsResult = await hostsResp.json();
+
+        if (hostsResult.success) {
+            ctopHostsRegistry = hostsResult.data.hosts || [];
+        }
+
+        if (deviceResult.success) {
+            const d = deviceResult.data;
+            document.getElementById('ctop-url-1-input').value = d.ctop_url_1 || '';
+            document.getElementById('ctop-url-2-input').value = d.ctop_url_2 || '';
+
+            const list = document.getElementById('ctop-targets-list');
+            list.innerHTML = '';
+            (d.ctop_targets || []).forEach(t => addCtopTargetRow(t.host_id, t.node_path, !!t.node_token));
+        }
+    } catch (error) {
+        console.error('Error loading CTOP endpoints:', error);
+    }
+}
+
+function addCtopTargetRow(hostId = '', nodePath = '', hasToken = false) {
+    const list = document.getElementById('ctop-targets-list');
+    const row = document.createElement('div');
+    row.className = 'd-flex gap-2 align-items-center mb-2 ctop-target-row';
+
+    const hostOptions = ctopHostsRegistry.map(h =>
+        `<option value="${escapeHtmlAttr(h.id)}" ${h.id === hostId ? 'selected' : ''}>${escapeHtmlAttr(h.name)}</option>`
+    ).join('');
+
+    // node_token is write-only, same as api_key/auth_token elsewhere in
+    // this app — the real value is never sent back to the browser, so
+    // this field always starts blank. A blank field on save means "keep
+    // whatever's already stored" (see device_routes_firestore.py
+    // update_device), not "clear it" — the placeholder reflects whichever
+    // of those two states is actually true for this target.
+    const tokenPlaceholder = hasToken
+        ? 'Token set — leave blank to keep it'
+        : 'Optional — only if this node needs its own token';
+
+    row.innerHTML = `
+        <select class="form-select form-select-sm ctop-target-host" style="max-width: 160px;">
+            <option value="">Choose host…</option>
+            ${hostOptions}
+        </select>
+        <input type="text" class="form-control form-control-sm ctop-target-path"
+               placeholder="/api/nodes/create-cin/51" value="${escapeHtmlAttr(nodePath)}" style="max-width: 220px;">
+        <input type="password" class="form-control form-control-sm ctop-target-token"
+               placeholder="${escapeHtmlAttr(tokenPlaceholder)}">
+        <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('.ctop-target-row').remove()" title="Remove target">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    `;
+    list.appendChild(row);
+}
+
+async function saveCtopEndpoints() {
+    const deviceId = '{{ device.id if device else "" }}';
+    if (!deviceId) return;
+
+    const ctop_url_1 = document.getElementById('ctop-url-1-input').value.trim();
+    const ctop_url_2 = document.getElementById('ctop-url-2-input').value.trim();
+
+    if (!ctop_url_1) {
+        showAlert('Primary URL is required.', 'warning');
+        return;
+    }
+
+    const ctop_targets = [];
+    let incomplete = false;
+    document.querySelectorAll('.ctop-target-row').forEach(row => {
+        const hostId = row.querySelector('.ctop-target-host').value;
+        const nodePath = row.querySelector('.ctop-target-path').value.trim();
+        const nodeToken = row.querySelector('.ctop-target-token').value.trim();
+        if (hostId && nodePath) {
+            const target = { host_id: hostId, node_path: nodePath };
+            if (nodeToken) target.node_token = nodeToken;  // blank = keep existing, see backend
+            ctop_targets.push(target);
+        } else if (hostId || nodePath) {
+            incomplete = true;
+        }
+    });
+
+    if (incomplete) {
+        showAlert('Every additional target needs both a host and a path — remove any half-filled rows.', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/devices/${deviceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ctop_url_1, ctop_url_2, ctop_targets })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            showAlert('CTOP endpoints saved and applied immediately.', 'success');
+        } else {
+            showAlert(`Failed to save endpoints: ${result.error}`, 'danger');
+        }
+    } catch (error) {
+        showAlert(`Error saving endpoints: ${error.message}`, 'danger');
+    }
+}
 
 // Metric key names come from preprocess_service.py's
 // transform_to_ctop_format() — a small, fixed, hardcoded set of keys
@@ -378,9 +537,15 @@ async function loadDeviceActivityChart() {
 }
 
 function editDevice() {
-    const deviceId = '{{ device.id if device else "" }}';
-    if (deviceId) {
-        window.location.href = `/devices/${deviceId}/edit`;
+    // There's no standalone edit page/route — this used to point at
+    // /devices/<id>/edit, which never existed (always 404'd). The only
+    // part of a device actually editable from this page right now is its
+    // CTOP delivery endpoints, below, so jump straight there instead of
+    // navigating to a dead link.
+    const card = document.getElementById('ctop-url-1-input');
+    if (card) {
+        card.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        card.focus();
     }
 }
 

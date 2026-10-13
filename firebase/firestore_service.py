@@ -1,7 +1,7 @@
 import firebase_admin
 from firebase_admin import credentials, firestore
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 
@@ -238,6 +238,43 @@ class FirestoreService:
         if log_type:
             query = query.where("log_type", "==", log_type)
 
+        if device_id or log_type:
+            # Filtering on a field other than created_at while also
+            # ordering by created_at needs a Firestore composite index —
+            # one was never created for this (confirmed live: Firestore
+            # raised FailedPrecondition "query requires an index" the
+            # first time this path actually got exercised, which was
+            # effectively never, since device_detail's page route had an
+            # unrelated collision that made it unreachable until that was
+            # fixed too). Rather than requiring a console/CLI index
+            # deployment, fetch every matching doc in Firestore's default
+            # order and do the recency sort + limit in Python.
+            #
+            # This fetches the FULL matching set, not a capped sample —
+            # an earlier version capped at max(limit*10, 200) before
+            # sorting, which for a device with more matching logs than
+            # that cap could silently return an arbitrary old subset
+            # instead of the true N most recent (Firestore's unspecified
+            # default order has no correlation with recency). Confirmed
+            # the actual write volume here is tiny (this collection is
+            # only written on device-creation events — the high-frequency
+            # CTOP-send logging goes to utils/memory_logger instead, not
+            # Firestore), so fetching everything is cheap today. _SAFETY_CAP
+            # exists purely as a guard against an unbounded read if that
+            # write pattern ever changes, not as a correctness mechanism.
+            _SAFETY_CAP = 5000
+            query = query.limit(_SAFETY_CAP)
+            docs = query.stream()
+            logs = []
+            for doc in docs:
+                log_data = doc.to_dict()
+                log_data["id"] = doc.id
+                logs.append(log_data)
+
+            epoch = datetime.min.replace(tzinfo=timezone.utc)
+            logs.sort(key=lambda entry: entry.get("created_at") or epoch, reverse=True)
+            return logs[:limit]
+
         query = query.order_by("created_at", direction=firestore.Query.DESCENDING)
         query = query.limit(limit)
 
@@ -347,6 +384,16 @@ class FirestoreService:
         settings["updated_at"] = firestore.SERVER_TIMESTAMP
         settings_ref.set(settings, merge=True)
         return True
+
+    def get_named_settings(self, doc_id: str) -> Dict:
+        """Read-only counterpart to create_or_update_settings() — fetch a
+        named settings document (e.g. 'ctop_hosts', 'ctop_field_mapping').
+        Returns {} if the document doesn't exist yet (first run)."""
+        if not self.is_initialized():
+            raise Exception("Firestore not initialized")
+
+        doc = self._db.collection("settings").document(doc_id).get()
+        return doc.to_dict() if doc.exists else {}
 
     # Real-time listener
     def on_devices_change(self, callback):

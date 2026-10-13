@@ -20,6 +20,49 @@ _EMQX_FEED_METADATA_KEYS = {"created_at", "entry_id"} | {
     f"field{i}" for i in range(1, 9)
 }
 
+# Default outbound CTOP JSON key for each (device_type, internal processed
+# field) — the payload shape CTOP's API expected when this was written.
+# The left-hand internal field names (Level, Temperature, ...) come from
+# the _preprocess_* methods below and are not configurable; the right-hand
+# CTOP key names are, via Settings → CTOP Parameter Mapping, so a schema
+# change on CTOP's end (e.g. the dev environment expecting different key
+# names than production did) doesn't require a code change. See
+# set_ctop_field_map_overrides()/get_ctop_field_map() below — app.py loads
+# any saved overrides into the cache at startup, and settings_routes.py
+# refreshes it immediately whenever the mapping is saved.
+DEFAULT_CTOP_FIELD_MAP = {
+    "EvaraTank": {"Level": "water_level", "Temperature": "temperature"},
+    "EvaraFlow": {"FlowRate": "flow_rate", "MeterReading": "waterconsumption"},
+    "EvaraValve": {"FlowRate": "flow_rate", "Liters": "liters"},
+    "EvaraDeep": {"Distance": "distance"},
+    "EvaraTDS": {"Temperature": "temperature", "TDS": "tds"},
+}
+
+_ctop_field_map_overrides = {}
+_ctop_field_map_lock = threading.Lock()
+
+
+def set_ctop_field_map_overrides(overrides):
+    """Replace the in-memory override cache. `overrides` has the same
+    shape as DEFAULT_CTOP_FIELD_MAP (device_type -> {internal_field:
+    ctop_key}) but only needs to contain the keys actually being
+    overridden — anything missing falls back to the default."""
+    global _ctop_field_map_overrides
+    with _ctop_field_map_lock:
+        _ctop_field_map_overrides = overrides or {}
+
+
+def get_ctop_field_map():
+    """Current effective CTOP field map: DEFAULT_CTOP_FIELD_MAP with any
+    Settings overrides merged in per device type. Always returns every
+    known device type/field, even if no override was ever saved."""
+    with _ctop_field_map_lock:
+        overrides = dict(_ctop_field_map_overrides)
+    merged = {}
+    for device_type, default_fields in DEFAULT_CTOP_FIELD_MAP.items():
+        merged[device_type] = {**default_fields, **(overrides.get(device_type) or {})}
+    return merged
+
 
 class PreprocessService:
     """Service for preprocessing and transforming ThingSpeak data"""
@@ -990,44 +1033,41 @@ class PreprocessService:
             )
 
         transformed = []
+        # Internal field -> CTOP JSON key, with any Settings → CTOP
+        # Parameter Mapping override already merged in (defaults to exactly
+        # DEFAULT_CTOP_FIELD_MAP's names if nothing's been overridden).
+        # Looked up once per call, not per entry — this function is called
+        # once per fetch tick with usually 1 entry, so the difference is
+        # negligible either way, but there's no reason to re-lock/re-merge
+        # per entry.
+        #
+        # Iterating type_map.items() generically (instead of a per-device-
+        # type if/elif hardcoding the same internal field names a second
+        # time) means DEFAULT_CTOP_FIELD_MAP is the only place a device
+        # type's outbound fields are listed — adding/removing a field
+        # there is the whole change, with no second branch to forget to
+        # update in sync. An unknown device_type's type_map is {} (nothing
+        # in DEFAULT_CTOP_FIELD_MAP for it), so the loop naturally produces
+        # an empty payload, matching the warning logged above.
+        type_map = get_ctop_field_map().get(device.device_type, {})
 
         for entry in processed_data:
             ctop_payload = {}
+            for internal_field, ctop_key in type_map.items():
+                if entry.get(internal_field) is not None:
+                    ctop_payload[ctop_key] = entry.get(internal_field)
 
-            # Map fields based on device type (only essential sensor fields for CTOP)
-            if device.device_type == "EvaraTank":
-                # EvaraTank: Level -> water_level, Temperature -> temperature
-                if entry.get("Level") is not None:
-                    ctop_payload["water_level"] = entry.get("Level")
-                if entry.get("Temperature") is not None:
-                    ctop_payload["temperature"] = entry.get("Temperature")
-
-            elif device.device_type == "EvaraFlow":
-                # EvaraFlow CTOP schema (domain: water_flow, sensor: retrofit-sensor)
-                # CTOP expects: flow_rate (m³/hr, float) and waterconsumption (kl, float)
-                if entry.get("FlowRate") is not None:
-                    ctop_payload["flow_rate"] = entry.get("FlowRate")
-                if entry.get("MeterReading") is not None:
-                    ctop_payload["waterconsumption"] = entry.get("MeterReading")
-
-            elif device.device_type == "EvaraValve":
-                # EvaraValve: FlowRate -> flow_rate, Liters -> liters
-                if entry.get("FlowRate") is not None:
-                    ctop_payload["flow_rate"] = entry.get("FlowRate")
-                if entry.get("Liters") is not None:
-                    ctop_payload["liters"] = entry.get("Liters")
-
-            elif device.device_type == "EvaraDeep":
-                # EvaraDeep: Distance -> distance
-                if entry.get("Distance") is not None:
-                    ctop_payload["distance"] = entry.get("Distance")
-
-            elif device.device_type == "EvaraTDS":
-                # EvaraTDS: Temperature -> temperature, TDS -> tds
-                if entry.get("Temperature") is not None:
-                    ctop_payload["temperature"] = entry.get("Temperature")
-                if entry.get("TDS") is not None:
-                    ctop_payload["tds"] = entry.get("TDS")
+            # Force every outbound value to a real float. A whole-number
+            # ThingSpeak reading like "20" survives _convert_value() as a
+            # Python int (no decimal point to trigger the float branch),
+            # and round(int, 2) stays an int too — so without this, a
+            # payload like {"temperature": 20} goes out as a JSON integer.
+            # Confirmed live against dev-ctop.iiit.ac.in: it validates
+            # types strictly and rejects an int with "Wrong data type for
+            # water_level. Expected float but got <class 'int'>" — a real,
+            # payload-dependent 400 that only shows up when a reading
+            # happens to be a whole number.
+            ctop_payload = {k: float(v) for k, v in ctop_payload.items()}
 
             # Only essential sensor fields are sent to CTOP
             # No timestamp, latitude, longitude - matching user's exact requirement

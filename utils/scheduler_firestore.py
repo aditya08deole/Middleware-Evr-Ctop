@@ -558,6 +558,33 @@ def sync_mirror_job():
     # 2. Pull any remote changes (new devices, edited settings) from Firebase
     local_device_store.sync_from_firebase()
 
+    # 3. Refresh the CTOP host registry + field-mapping caches. These are
+    # per-process in-memory globals (services/ctop_service.py,
+    # services/preprocess_service.py), but this app runs under Gunicorn
+    # with multiple worker processes (see _acquire_scheduler_ownership
+    # below) and only ONE of them actually owns this scheduler — so a
+    # Settings save handled by a *different* worker updates Firestore
+    # correctly but never reaches the worker that actually sends data,
+    # which kept using a stale registry/mapping indefinitely despite the
+    # Settings UI claiming changes "apply immediately." This hourly job
+    # already runs inside the scheduler-owning worker, so it's the right
+    # place to pick up those changes without needing a restart — same
+    # one-hour bound devices/settings changes already have via step 2.
+    try:
+        from firebase.firestore_service import FirestoreService
+        from services.ctop_service import set_ctop_hosts
+        from services.preprocess_service import set_ctop_field_map_overrides
+
+        fs = FirestoreService()
+        hosts_doc = fs.get_named_settings("ctop_hosts")
+        if hosts_doc.get("hosts"):
+            set_ctop_hosts(hosts_doc["hosts"])
+
+        mapping_doc = fs.get_named_settings("ctop_field_mapping")
+        set_ctop_field_map_overrides(mapping_doc.get("overrides") or {})
+    except Exception as e:
+        logger.warning(f"Could not refresh CTOP hosts/field-mapping caches: {e}")
+
     logger.info("Hourly sync complete.")
 
 

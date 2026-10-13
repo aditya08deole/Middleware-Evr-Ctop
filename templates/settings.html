@@ -6,9 +6,9 @@
 <div class="container mt-4">
     <div class="row justify-content-center">
         <div class="col-lg-8">
-            <div class="card shadow-sm">
+            <div class="card">
                 <div class="card-header">
-                    <h4 class="mb-0"><i class="bi bi-clock"></i> Scheduler Settings</h4>
+                    <h4 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-clock"></i></span>Scheduler Settings</h4>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">
@@ -28,6 +28,72 @@
                     </form>
                 </div>
             </div>
+
+            <!-- CTOP Hosts registry -->
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-hdd-network"></i></span>CTOP Hosts</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">
+                        The "middle part" of a CTOP URL (e.g. <code>https://ctop.iiit.ac.in</code>
+                        or a dev/staging server) — register every host here once, then on a
+                        device's page pick a host + its node path instead of retyping the full
+                        URL. A device still sends to every host it targets (plus its original
+                        URL fields) — if one host is down, delivery to the others is unaffected.
+                        Repointing a host here (e.g. if an address changes) updates every device
+                        that references it, with no code change.
+                    </p>
+                    <div class="table-responsive mb-3">
+                        <table class="table table-hover" id="ctop-hosts-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Base URL</th>
+                                    <th style="width: 3rem;"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="ctop-hosts-body">
+                                <tr><td colspan="3" class="text-center text-muted">Loading…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <form id="ctop-host-form" class="d-flex flex-wrap gap-2 align-items-end">
+                        <div>
+                            <label for="ctop-host-name" class="form-label">Name</label>
+                            <input type="text" class="form-control form-control-sm" id="ctop-host-name" placeholder="e.g. Dev" required>
+                        </div>
+                        <div class="flex-grow-1">
+                            <label for="ctop-host-url" class="form-label">Base URL</label>
+                            <input type="url" class="form-control form-control-sm" id="ctop-host-url" placeholder="https://dev-ctop.iiit.ac.in" required>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-plus-lg"></i> Add Host
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- CTOP outbound parameter mapping -->
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0"><span class="settings-card-header-icon"><i class="bi bi-arrow-left-right"></i></span>CTOP Parameter Mapping</h4>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted">
+                        The JSON key name sent to CTOP for each sensor value, per device type.
+                        Change one here if CTOP's schema expects a different name (e.g. on a
+                        dev environment) — no code change or redeploy needed, and it applies on
+                        the very next scheduler tick. Leave a field as-is to keep the default.
+                    </p>
+                    <div id="ctop-field-mapping-groups">
+                        <p class="text-muted text-center">Loading…</p>
+                    </div>
+                    <button type="button" class="btn btn-primary mt-2" id="save-field-mapping-btn">
+                        <i class="bi bi-save"></i> Save Mapping
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -35,7 +101,11 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     loadSettings();
+    loadCtopHosts();
+    loadCtopFieldMapping();
     document.getElementById('scheduler-form').addEventListener('submit', saveSchedulerSettings);
+    document.getElementById('ctop-host-form').addEventListener('submit', addCtopHost);
+    document.getElementById('save-field-mapping-btn').addEventListener('click', saveCtopFieldMapping);
 });
 
 async function loadSettings() {
@@ -75,6 +145,158 @@ async function saveSchedulerSettings(e) {
         }
     } catch (error) {
         showAlert(`Error saving scheduler settings: ${error.message}`, 'danger');
+    }
+}
+
+// --- CTOP Hosts ---------------------------------------------------------
+
+// escapeHtml is defined globally in static/js/dom-utils.js (loaded via base.html).
+
+async function loadCtopHosts() {
+    const tbody = document.getElementById('ctop-hosts-body');
+    try {
+        const response = await fetch('/settings/ctop-hosts');
+        const result = await response.json();
+
+        if (!result.success) {
+            tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">${escapeHtml(result.error)}</td></tr>`;
+            return;
+        }
+
+        const hosts = result.data.hosts || [];
+        if (hosts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">No hosts registered yet.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = hosts.map(h => `
+            <tr>
+                <td><strong>${escapeHtml(h.name)}</strong></td>
+                <td><code>${escapeHtml(h.base_url)}</code></td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCtopHost('${escapeHtml(h.id)}')" title="Remove host">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading CTOP hosts:', error);
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Could not load hosts.</td></tr>';
+    }
+}
+
+async function addCtopHost(e) {
+    e.preventDefault();
+    const name = document.getElementById('ctop-host-name').value.trim();
+    const baseUrl = document.getElementById('ctop-host-url').value.trim();
+    if (!name || !baseUrl) return;
+
+    try {
+        const response = await fetch('/settings/ctop-hosts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, base_url: baseUrl })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            showAlert(`Host "${name}" added.`, 'success');
+            document.getElementById('ctop-host-form').reset();
+            loadCtopHosts();
+        } else {
+            showAlert(`Failed to add host: ${result.error}`, 'danger');
+        }
+    } catch (error) {
+        showAlert(`Error adding host: ${error.message}`, 'danger');
+    }
+}
+
+async function deleteCtopHost(hostId) {
+    if (!confirm('Remove this CTOP host? Any device still targeting it by name will simply skip that one endpoint.')) return;
+
+    try {
+        const response = await fetch(`/settings/ctop-hosts/${encodeURIComponent(hostId)}`, { method: 'DELETE' });
+        const result = await response.json();
+
+        if (result.success) {
+            showAlert('Host removed.', 'success');
+            loadCtopHosts();
+        } else {
+            showAlert(`Failed to remove host: ${result.error}`, 'danger');
+        }
+    } catch (error) {
+        showAlert(`Error removing host: ${error.message}`, 'danger');
+    }
+}
+
+// --- CTOP Parameter Mapping ---------------------------------------------
+
+async function loadCtopFieldMapping() {
+    const container = document.getElementById('ctop-field-mapping-groups');
+    try {
+        const response = await fetch('/settings/ctop-field-mapping');
+        const result = await response.json();
+
+        if (!result.success) {
+            container.innerHTML = `<p class="text-danger">${escapeHtml(result.error)}</p>`;
+            return;
+        }
+
+        const mapping = result.data.mapping || {};
+        const deviceTypes = Object.keys(mapping).sort();
+
+        container.innerHTML = deviceTypes.map(deviceType => `
+            <div class="mb-3">
+                <h6 class="fw-bold">${escapeHtml(deviceType)}</h6>
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        ${Object.entries(mapping[deviceType]).map(([internalField, ctopKey]) => `
+                            <tr>
+                                <td class="text-muted" style="width: 40%;">${escapeHtml(internalField)}</td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm ctop-field-mapping-input"
+                                           data-device-type="${escapeHtml(deviceType)}" data-internal-field="${escapeHtml(internalField)}"
+                                           value="${escapeHtml(ctopKey)}">
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading CTOP field mapping:', error);
+        container.innerHTML = '<p class="text-danger">Could not load parameter mapping.</p>';
+    }
+}
+
+async function saveCtopFieldMapping() {
+    const inputs = document.querySelectorAll('.ctop-field-mapping-input');
+    const mapping = {};
+
+    inputs.forEach(input => {
+        const deviceType = input.getAttribute('data-device-type');
+        const internalField = input.getAttribute('data-internal-field');
+        if (!mapping[deviceType]) mapping[deviceType] = {};
+        mapping[deviceType][internalField] = input.value.trim();
+    });
+
+    try {
+        const response = await fetch('/settings/ctop-field-mapping', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mapping })
+        });
+        const result = await response.json();
+
+        if (result.success) {
+            showAlert('Parameter mapping saved and applied immediately.', 'success');
+        } else {
+            showAlert(`Failed to save mapping: ${result.error}`, 'danger');
+        }
+    } catch (error) {
+        showAlert(`Error saving mapping: ${error.message}`, 'danger');
     }
 }
 

@@ -4,7 +4,7 @@ from firebase.auth_service import AuthService
 from models.dataclass_models import DeviceModel, LogModel
 from services import ThingSpeakService, PreprocessService, CTOPService
 from middleware import handle_errors
-from middleware.validation_middleware import validate_device_data
+from middleware.validation_middleware import validate_device_data, is_valid_url
 from utils.encryption import get_encryption_service
 from datetime import datetime
 from utils.local_device_store import local_device_store
@@ -97,6 +97,7 @@ def add_device():
         api_key=encrypted_data["api_key"],
         ctop_url_1=encrypted_data["ctop_url_1"],
         ctop_url_2=encrypted_data.get("ctop_url_2"),
+        ctop_targets=encrypted_data.get("ctop_targets") or [],
         auth_token=encrypted_data["auth_token"],
         latitude=encrypted_data.get("latitude"),
         longitude=encrypted_data.get("longitude"),
@@ -215,7 +216,6 @@ def add_device():
 
 
 @device_bp.route("/<device_id>", methods=["PUT"])
-@validate_device_data
 @handle_errors
 def update_device(device_id):
     """Update a device"""
@@ -225,6 +225,121 @@ def update_device(device_id):
         return jsonify({"success": False, "error": "Device not found"}), 404
 
     data = request.get_json()
+
+    # validate_device_data was removed from this route (unlike the POST
+    # create route, which still has it) so a PUT can update just one field
+    # — e.g. adding a second CTOP endpoint — without resending name/
+    # ctop_url_1/auth_token. See routes/device_routes.py's PUT (the SQLite
+    # blueprint), which never had that decorator either; this just matches
+    # it. A request body is still required, just not every field in it.
+    if not data:
+        return jsonify({"success": False, "error": "Request body is required"}), 400
+
+    # Removing validate_device_data (above) dropped format/range checks
+    # entirely on update — a PUT could silently write an invalid
+    # ctop_url_1 (requests.exceptions.MissingSchema on every subsequent
+    # scheduler tick), a too-short auth_token, or an out-of-range
+    # latitude/longitude. Re-check each field, but only when it's actually
+    # present in this request — a partial update still doesn't need to
+    # resend fields it isn't touching.
+    if "ctop_url_1" in data and data["ctop_url_1"] and not is_valid_url(data["ctop_url_1"]):
+        return jsonify({"success": False, "error": "Invalid ctop_url_1 format"}), 400
+    if data.get("ctop_url_2") and not is_valid_url(data["ctop_url_2"]):
+        return jsonify({"success": False, "error": "Invalid ctop_url_2 format"}), 400
+    if "auth_token" in data and data["auth_token"] and len(str(data["auth_token"])) < 8:
+        return (
+            jsonify({"success": False, "error": "Auth token must be at least 8 characters"}),
+            400,
+        )
+    if data.get("latitude") is not None:
+        try:
+            if not -90 <= float(data["latitude"]) <= 90:
+                return (
+                    jsonify({"success": False, "error": "Latitude must be between -90 and 90"}),
+                    400,
+                )
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "Invalid latitude format"}), 400
+    if data.get("longitude") is not None:
+        try:
+            if not -180 <= float(data["longitude"]) <= 180:
+                return (
+                    jsonify({"success": False, "error": "Longitude must be between -180 and 180"}),
+                    400,
+                )
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "error": "Invalid longitude format"}), 400
+
+    # If this update makes the device's effective data_source "emqx"
+    # (either switching to it now, or it already is and something else is
+    # being changed), the EMQX fields it actually needs to connect must
+    # be present somewhere — in this request or already on the device —
+    # not just on create. Checked against the merged state, not just the
+    # incoming payload, since a partial update legitimately might not
+    # touch any of these fields at all.
+    effective_data_source = data.get("data_source", device.get("data_source", "thingspeak"))
+    if effective_data_source == "emqx":
+        merged = {**device, **data}
+        for field in ("emqx_broker_url", "emqx_topic", "emqx_username", "emqx_password"):
+            if not merged.get(field):
+                return (
+                    jsonify({"success": False, "error": f"Missing required EMQX field: {field}"}),
+                    400,
+                )
+
+    if "ctop_targets" in data:
+        if not isinstance(data["ctop_targets"], list) or not all(
+            isinstance(t, dict) for t in data["ctop_targets"]
+        ):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "ctop_targets must be a list of {host_id, node_path} objects",
+                    }
+                ),
+                400,
+            )
+        # node_token is write-only from the UI's perspective (same pattern
+        # as api_key/auth_token elsewhere in this route): a blank
+        # node_token means "don't change it", not "clear it", so a saved
+        # token isn't wiped out just because the form field was left
+        # empty on a later edit. Matched by (host_id, node_path) — NOT
+        # host_id alone, which would collapse two existing targets that
+        # share a host but differ by path into just one, risking copying
+        # the wrong target's token onto a target that never had one.
+        existing_targets_by_key = {
+            (t.get("host_id"), t.get("node_path")): t
+            for t in (device.get("ctop_targets") or [])
+        }
+        cleaned_targets = []
+        for target in data["ctop_targets"]:
+            host_id = str(target.get("host_id") or "").strip()
+            node_path = str(target.get("node_path") or "").strip()
+            if not host_id or not node_path:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Each ctop_targets entry needs both host_id and node_path",
+                        }
+                    ),
+                    400,
+                )
+
+            raw_token = target.get("node_token")
+            if raw_token:
+                node_token = encryption_service.encrypt(str(raw_token))
+            else:
+                node_token = (
+                    existing_targets_by_key.get((host_id, node_path)) or {}
+                ).get("node_token")
+
+            cleaned_target = {"host_id": host_id, "node_path": node_path}
+            if node_token:
+                cleaned_target["node_token"] = node_token
+            cleaned_targets.append(cleaned_target)
+        data["ctop_targets"] = cleaned_targets
 
     try:
         # Encrypt sensitive fields if provided
@@ -246,6 +361,7 @@ def update_device(device_id):
             "api_key",
             "ctop_url_1",
             "ctop_url_2",
+            "ctop_targets",
             "auth_token",
             "latitude",
             "longitude",

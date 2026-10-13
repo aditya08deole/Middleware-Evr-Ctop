@@ -13,6 +13,22 @@ class DeviceModel:
     ctop_url_1: str
     auth_token: str
     ctop_url_2: Optional[str] = None
+    # Open-ended list of additional CTOP endpoints beyond the two legacy
+    # ctop_url_1/_2 slots (which stay exactly as-is — full, opaque URLs,
+    # untouched for backward compatibility). Each entry is
+    # {"host_id": "<id from the settings/ctop_hosts registry>",
+    #  "node_path": "/api/nodes/create-cin/51",
+    #  "node_token": "<encrypted, optional>"} — the host's base URL is
+    # resolved from the registry at send time (see
+    # services/ctop_service.py get_ctop_hosts()), so repointing a host
+    # (e.g. if dev-ctop.iiit.ac.in's address ever changes) is a single
+    # Settings edit instead of editing every device that references it.
+    # node_token exists because some CTOP environments issue a distinct
+    # bearer token per node rather than accepting the device's shared
+    # auth_token everywhere (confirmed live against dev-ctop.iiit.ac.in:
+    # the shared production token gets 404 "Node token not found" there) —
+    # when absent, the shared auth_token is used for that target too.
+    ctop_targets: List[Dict[str, str]] = field(default_factory=list)
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     is_active: bool = True
@@ -69,6 +85,7 @@ class DeviceModel:
             "api_key": self.api_key,
             "ctop_url_1": self.ctop_url_1,
             "ctop_url_2": self.ctop_url_2,
+            "ctop_targets": self.ctop_targets,
             "auth_token": self.auth_token,
             "latitude": self.latitude,
             "longitude": self.longitude,
@@ -111,6 +128,7 @@ class DeviceModel:
             ctop_url_1=data.get("ctop_url_1", ""),
             auth_token=data.get("auth_token", ""),
             ctop_url_2=data.get("ctop_url_2"),
+            ctop_targets=data.get("ctop_targets") or [],
             latitude=data.get("latitude"),
             longitude=data.get("longitude"),
             is_active=data.get("is_active", True),

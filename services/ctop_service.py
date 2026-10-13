@@ -1,10 +1,55 @@
 import requests
 import json
+import logging
+import threading
 import time
 from urllib3.util.retry import Retry
 from models import db, Device
 from config import Config
 import os
+
+# Registry of named CTOP hosts (base URL only, e.g. "https://ctop.iiit.ac.in")
+# that a device's ctop_targets entries reference by host_id instead of
+# hardcoding a full URL — see DeviceModel.ctop_targets. Settings →
+# CTOP Hosts is the only place this is meant to be edited: app.py loads it
+# into this cache at startup, and settings_routes.py refreshes it
+# immediately whenever the registry is saved, so repointing a host (e.g.
+# dev-ctop.iiit.ac.in moving to a new address) takes effect on the very
+# next scheduler tick without a restart or touching any device record.
+_ctop_hosts_cache = {}
+_ctop_hosts_lock = threading.Lock()
+
+
+def set_ctop_hosts(hosts):
+    """Replace the in-memory host registry. `hosts` is a list of
+    {"id": ..., "base_url": ...} dicts (extra keys like "name" are
+    ignored here)."""
+    global _ctop_hosts_cache
+    with _ctop_hosts_lock:
+        _ctop_hosts_cache = {
+            h["id"]: h["base_url"].rstrip("/")
+            for h in (hosts or [])
+            if h.get("id") and h.get("base_url")
+        }
+
+
+def get_ctop_hosts():
+    """Current effective host registry, as {host_id: base_url}."""
+    with _ctop_hosts_lock:
+        return dict(_ctop_hosts_cache)
+
+
+def as_bearer(token):
+    """Turn a raw token into a full 'Bearer <token>' Authorization value,
+    without double-prefixing a token that already has one. Module-level
+    (not just used inside send_to_ctop below) because app.py's
+    /api/test-connection route needs the exact same guard — it used to
+    unconditionally do f"Bearer {token}", so a token a user already typed
+    with a 'Bearer ' prefix came out as 'Bearer Bearer xyz' and the test
+    failed even for valid credentials."""
+    if not token:
+        return None
+    return token if str(token).lower().startswith("bearer ") else f"Bearer {token}"
 
 
 class CTOPService:
@@ -64,6 +109,7 @@ class CTOPService:
             device = device_data
             ctop_url_1 = device.get("ctop_url_1")
             ctop_url_2 = device.get("ctop_url_2")
+            ctop_targets = device.get("ctop_targets") or []
             auth_token = device.get("auth_token")
         else:
             # SQLite fallback
@@ -72,6 +118,7 @@ class CTOPService:
                 return {"error": "Device not found"}
             ctop_url_1 = device.ctop_url_1
             ctop_url_2 = device.ctop_url_2
+            ctop_targets = []
             auth_token = device.auth_token
 
         # Decrypt auth token if using Firebase
@@ -81,19 +128,77 @@ class CTOPService:
             except Exception as e:
                 return {"error": f"Failed to decrypt auth token: {str(e)}"}
 
-        urls = [u for u in (ctop_url_1, ctop_url_2) if u]
-        if not urls:
+        # Resolve ctop_targets (host_id + node_path [+ node_token]) against
+        # the current host registry. A target whose host_id was deleted
+        # from the registry (or never existed) is skipped with a warning
+        # rather than crashing the whole send — the two legacy URLs still
+        # go out. node_token is optional and per-target: some CTOP
+        # environments (confirmed live against dev-ctop.iiit.ac.in) issue a
+        # distinct bearer token per node rather than accepting the same
+        # token a device already uses against production — reusing the
+        # device's shared auth_token there gets a 404 "Node token not
+        # found", not a real delivery failure. When no node_token is set,
+        # the shared auth_token is used, same as the legacy URLs.
+        resolved_targets = []  # list of (url, override_token_or_None)
+        if ctop_targets:
+            hosts = get_ctop_hosts()
+            for target in ctop_targets:
+                host_id = (target or {}).get("host_id")
+                node_path = (target or {}).get("node_path") or ""
+                base_url = hosts.get(host_id)
+                if not base_url:
+                    logging.getLogger(__name__).warning(
+                        f"CTOP target for device {device_id} references unknown "
+                        f"host_id '{host_id}' (removed from Settings?) — skipping."
+                    )
+                    continue
+
+                node_token = None
+                encrypted_node_token = (target or {}).get("node_token")
+                if encrypted_node_token:
+                    if self.use_firebase:
+                        try:
+                            node_token = self.encryption_service.decrypt(
+                                encrypted_node_token
+                            )
+                        except Exception as e:
+                            logging.getLogger(__name__).warning(
+                                f"Failed to decrypt node_token for device {device_id} "
+                                f"target '{host_id}': {e} — falling back to the "
+                                f"device's shared auth_token for this target."
+                            )
+                    else:
+                        node_token = encrypted_node_token
+
+                resolved_targets.append((base_url + node_path, node_token))
+
+        shared_auth = as_bearer(auth_token)
+
+        # Send to every configured endpoint: the two legacy slots (shared
+        # auth_token) plus any resolved ctop_targets (each with its own
+        # token if one was set, else the shared one) — deduped by URL so
+        # the same endpoint reachable via two different entries isn't
+        # POSTed to twice (first occurrence's auth wins, which is why
+        # resolved_targets is listed BEFORE the legacy slots below: if a
+        # target's resolved URL happens to collide with ctop_url_1/_2, its
+        # own node_token must win the dedup, not the device's generic
+        # shared auth_token — losing that would silently reproduce the
+        # exact "Node token not found" failure this feature exists to
+        # avoid). Overall success below is an OR across all of them: as
+        # long as at least one endpoint accepts the data, the device's
+        # pipeline advances — a down host never blocks delivery to a
+        # working one.
+        all_targets = [
+            (url, as_bearer(token) or shared_auth) for url, token in resolved_targets
+        ] + [(ctop_url_1, shared_auth), (ctop_url_2, shared_auth)]
+        seen_urls = set()
+        targets = []
+        for url, auth_header in all_targets:
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                targets.append((url, auth_header))
+        if not targets:
             return {"error": "No CTOP URL configured"}
-
-        # Ensure auth_token is a full Authorization header value.
-        # If user stored only the raw token, prefix with 'Bearer '
-        if auth_token and not str(auth_token).lower().startswith("bearer "):
-            auth_token = f"Bearer {auth_token}"
-
-        # Only include Authorization header if token is present
-        headers = {"Content-Type": "application/json"}
-        if auth_token:
-            headers["Authorization"] = auth_token
 
         # Extract device name and type for better logging
         device_name = None
@@ -105,12 +210,11 @@ class CTOPService:
             device_name = device.name
             device_type = device.device_type
 
-        # Send to every configured CTOP endpoint (ctop_url_1 and, if set,
-        # ctop_url_2) — previously only ctop_url_1 was ever POSTed even
-        # though ctop_url_2 is a fully-wired, user-configurable field, so a
-        # device's secondary CTOP endpoint silently never received data.
         per_url_results = []
-        for url in urls:
+        for url, auth_header in targets:
+            headers = {"Content-Type": "application/json"}
+            if auth_header:
+                headers["Authorization"] = auth_header
             success, response_data, error = self._send_with_retry(
                 url, payload, headers, device_id, device_name, device_type
             )
@@ -129,8 +233,6 @@ class CTOPService:
         if failed and overall_success:
             # At least one endpoint took the data, so the pipeline can still
             # advance — but a partial failure must not vanish silently.
-            import logging
-
             failed_summary = ", ".join(f"{r['url']} ({r['error']})" for r in failed)
             logging.getLogger(__name__).warning(
                 f"CTOP SEND [Device {device_id}]: delivered to "

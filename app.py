@@ -97,6 +97,28 @@ def create_app(config_name="default"):
     logger.info("Performing startup sync from Firebase...")
     local_device_store.sync_from_firebase()
 
+    # 1b. Warm the CTOP host registry and field-mapping caches (Settings →
+    # CTOP Hosts / CTOP Parameter Mapping) so the scheduler's very first
+    # tick already has them, instead of waiting for someone to open the
+    # Settings page first. Best-effort: Firestore being briefly unavailable
+    # here shouldn't stop the app from starting — the two GET routes
+    # already seed/refresh these same caches on first request as a backup.
+    try:
+        from firebase.firestore_service import FirestoreService
+        from services.ctop_service import set_ctop_hosts
+        from services.preprocess_service import set_ctop_field_map_overrides
+
+        fs = FirestoreService()
+        hosts_doc = fs.get_named_settings("ctop_hosts")
+        if hosts_doc.get("hosts"):
+            set_ctop_hosts(hosts_doc["hosts"])
+
+        mapping_doc = fs.get_named_settings("ctop_field_mapping")
+        if mapping_doc.get("overrides"):
+            set_ctop_field_map_overrides(mapping_doc["overrides"])
+    except Exception as e:
+        logger.warning(f"Could not warm CTOP hosts/field-mapping caches at startup: {e}")
+
     # 2. Ensure device cache is warmed up
     from utils.device_cache import device_cache
 
@@ -156,9 +178,22 @@ def create_app(config_name="default"):
         """Render multi-step add device page"""
         return render_template("add_device_multi.html")
 
-    @app.route("/devices/<device_id>")
+    @app.route("/device-detail/<device_id>")
     def device_detail(device_id):
-        """Render device detail page"""
+        """Render device detail page.
+
+        Deliberately NOT at /devices/<device_id> — that path is already
+        claimed by device_bp's GET /devices/<id> JSON API route (see
+        routes/device_routes_firestore.py), registered earlier via
+        register_blueprint(). Both rules matched identically, and the
+        blueprint's rule (added first) always won the tie, silently
+        making this HTML page unreachable at that path — nothing ever
+        actually linked here before (editDevice() pointed at a
+        /devices/<id>/edit route that never existed either), so the
+        collision went unnoticed. Templates/device_detail.html's own JS
+        (loadCtopEndpointsCard) now relies on GET /devices/<id> returning
+        JSON, so that path staying JSON is the fix, not the problem.
+        """
         # Try to get device from Local Mirror Cache (0 Firebase Reads)
         from utils.local_device_store import local_device_store
 
@@ -273,8 +308,9 @@ def create_app(config_name="default"):
         try:
             # Simple HEAD request to test connectivity
             import requests
+            from services.ctop_service import as_bearer
 
-            headers = {"Authorization": f"Bearer {auth_token}"}
+            headers = {"Authorization": as_bearer(auth_token)}
             response = requests.head(url, headers=headers, timeout=10)
 
             if response.status_code in [200, 201, 204, 405]:
