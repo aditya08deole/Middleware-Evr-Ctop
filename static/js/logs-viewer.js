@@ -51,11 +51,12 @@ class LogsViewer {
      * HTML-escape a value before interpolating it into an innerHTML template.
      * Device name/type and log messages ultimately originate from
      * user-configured device data — escape them before they land in the DOM.
+     * Thin wrapper over the single shared copy in static/js/dom-utils.js
+     * (loaded globally via base.html) — existing this.escapeHtml(...) call
+     * sites in this file don't need to change.
      */
     escapeHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[ch]));
+        return escapeHtml(value);
     }
 
     /**

@@ -475,14 +475,11 @@ function populateReview() {
     `).join('');
 }
 
-// device/form values here are whatever the operator just typed in the
-// preceding steps — escape before interpolating into innerHTML so a device
-// name or MQTT topic containing HTML can't execute in the review panel.
-function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-    }[ch]));
-}
+// escapeHtml is defined globally in static/js/dom-utils.js (loaded via
+// base.html before this script) — device/form values here are whatever
+// the operator just typed in the preceding steps, escaped before
+// interpolating into innerHTML so a device name or MQTT topic containing
+// HTML can't execute in the review panel.
 
 async function testConnection() {
     const ctopUrl1 = document.getElementById('ctop-url-1').value;

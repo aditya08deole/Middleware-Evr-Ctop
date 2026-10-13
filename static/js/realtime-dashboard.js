@@ -21,12 +21,13 @@ class RealtimeDashboard {
      * HTML-escape a value before interpolating it into an innerHTML template.
      * device.name and device.emqx_topic are set by whoever created the
      * device — without this, a device named e.g. `<img src=x onerror=...>`
-     * would execute for every operator who opens this dashboard.
+     * would execute for every operator who opens this dashboard. Thin
+     * wrapper so existing this.escapeHtml(...) call sites in this file
+     * don't need to change — the real implementation is the single shared
+     * copy in static/js/dom-utils.js (loaded globally via base.html).
      */
     escapeHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-        }[ch]));
+        return escapeHtml(value);
     }
 
     start() {
@@ -327,6 +328,9 @@ class RealtimeDashboard {
                         <div class="btn-group">
                             <button class="btn btn-sm btn-outline-primary" onclick="fetchDevice('${safeId}')" title="Sync">
                                 <i class="bi bi-arrow-repeat"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="location.href='/device-detail/${safeId}'" title="View details &amp; CTOP endpoints">
+                                <i class="bi bi-gear"></i>
                             </button>
                             <button class="btn btn-sm btn-outline-info" onclick="location.href='/logs?device_id=${safeId}'" title="Logs">
                                 <i class="bi bi-journal"></i>
