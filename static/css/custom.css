@@ -1275,4 +1275,222 @@ h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
 }
 
+/* ==========================================================================
+   Auth Pages (Login / Register) — shared Liquid Glass treatment
+   Previously each had its own standalone amber/green theme, clashing with
+   every other page in the app.
+   ========================================================================== */
+
+.auth-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.auth-card {
+    background: var(--liquid-glass-island);
+    backdrop-filter: var(--liquid-blur-deep);
+    -webkit-backdrop-filter: var(--liquid-blur-deep);
+    border: var(--liquid-glass-border);
+    border-radius: var(--radius-ios-xl);
+    box-shadow: var(--liquid-shadow-lg), var(--liquid-glass-bevel);
+    width: 100%;
+    max-width: 440px;
+    padding: 2.5rem;
+    animation: authCardIn 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes authCardIn {
+    from { opacity: 0; transform: translateY(12px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.auth-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: var(--radius-ios-lg);
+    background: var(--primary-gradient);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.25rem;
+    color: #ffffff;
+    font-size: 2rem;
+    box-shadow: 0 8px 20px var(--primary-glow);
+}
+
+.auth-title {
+    color: var(--text-primary);
+    font-weight: 800;
+    text-align: center;
+    margin-bottom: 0.4rem;
+    letter-spacing: -0.02em;
+}
+
+.auth-subtitle {
+    color: var(--text-secondary);
+    text-align: center;
+    margin-bottom: 1.75rem;
+    font-size: 0.9375rem;
+}
+
+.auth-card .input-group-text {
+    background: rgba(0, 122, 255, 0.07);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-right: none;
+    color: var(--ios-blue);
+    border-radius: var(--radius-ios-md) 0 0 var(--radius-ios-md);
+}
+
+.auth-card .form-control {
+    border-left: none;
+    border-radius: 0 var(--radius-ios-md) var(--radius-ios-md) 0;
+}
+
+.auth-card .form-check-input:checked {
+    background-color: var(--ios-blue);
+    border-color: var(--ios-blue);
+}
+
+.auth-link {
+    color: var(--ios-blue);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.auth-link:hover {
+    color: var(--primary-dark);
+    text-decoration: underline;
+}
+
+.auth-divider {
+    border-top: 0.5px solid rgba(226, 232, 240, 0.8);
+    margin: 1.5rem 0;
+}
+
+.auth-footer-panel {
+    text-align: center;
+    background: rgba(0, 122, 255, 0.06);
+    border: 0.5px solid rgba(0, 122, 255, 0.15);
+    padding: 0.9rem;
+    border-radius: var(--radius-ios-lg);
+}
+
+.btn-social {
+    border: none;
+    color: #ffffff;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-ios-md);
+    font-weight: 600;
+    font-size: 0.8125rem;
+    transition: all var(--spring-snappy);
+}
+
+.btn-social:hover {
+    transform: translateY(-1.5px);
+    color: #ffffff;
+}
+
+.btn-social-google {
+    background: linear-gradient(135deg, #ea4335 0%, #c5221f 100%);
+}
+
+.btn-social-github {
+    background: linear-gradient(135deg, #24292e 0%, #0d1117 100%);
+}
+
+/* ==========================================================================
+   Logs Page
+   ========================================================================== */
+
+.logs-feed-panel {
+    max-height: 70vh;
+    overflow-y: auto;
+    background: rgba(248, 250, 252, 0.6);
+}
+
+/* Styles the .log-entry divs that static/js/logs-viewer.js generates —
+   plain white Bootstrap cards before, now matching the glass card
+   language used everywhere else. The JS only ever assigns classes/ids;
+   it never touches these properties directly, so this is purely additive. */
+.log-entry {
+    background: rgba(255, 255, 255, 0.75) !important;
+    backdrop-filter: var(--liquid-blur-thin);
+    -webkit-backdrop-filter: var(--liquid-blur-thin);
+    border: 0.5px solid rgba(226, 232, 240, 0.8);
+    border-radius: var(--radius-ios-lg) !important;
+    box-shadow: var(--liquid-shadow-sm) !important;
+    transition: all var(--spring-snappy);
+}
+
+.log-entry:hover {
+    background: rgba(255, 255, 255, 0.95) !important;
+    transform: translateY(-1px);
+}
+
+.log-entry.new {
+    animation: logEntryIn 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes logEntryIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Dropdown menus (e.g. the Logs page's status filter) — default Bootstrap
+   white box looked out of place against every glass panel around it. */
+.dropdown-menu {
+    background: var(--liquid-glass-island);
+    backdrop-filter: var(--liquid-blur-deep);
+    -webkit-backdrop-filter: var(--liquid-blur-deep);
+    border: var(--liquid-glass-border);
+    border-radius: var(--radius-ios-lg);
+    box-shadow: var(--liquid-shadow-md), var(--liquid-glass-bevel);
+    padding: 0.4rem;
+}
+
+.dropdown-item {
+    border-radius: var(--radius-ios-sm);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 0.5rem 0.75rem;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+    background: rgba(0, 122, 255, 0.08);
+    color: var(--ios-blue);
+}
+
+/* Device Info-style label/value pairs (device_detail.html's info cards,
+   and anywhere else this same label.text-muted.small + value pattern is
+   reused) — a pure CSS rhythm fix, no markup change needed anywhere. */
+.card-body label.text-muted.small {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.3rem;
+    color: var(--text-tertiary) !important;
+}
+
+/* Settings page card headers — small icon chip to the left of the title,
+   matching the stat-tile icon-chip language from the dashboard, instead
+   of a bare Bootstrap icon glyph. */
+.settings-card-header-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-ios-md);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ios-blue-bg);
+    color: var(--ios-blue);
+    font-size: 1rem;
+    margin-right: 0.6rem;
+    vertical-align: middle;
+}
 

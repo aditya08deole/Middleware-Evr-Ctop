@@ -31,16 +31,16 @@
 
 <div class="row">
     <div class="col-md-12">
-        <div class="card shadow-sm border-0" style="border-radius: 16px; overflow: hidden;">
-            <div class="card-header bg-white border-bottom-0 py-3 d-flex justify-content-between align-items-center">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0 fw-bold"><i class="bi bi-activity" id="logs-icon"></i> Live Feed</h5>
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-soft-primary text-primary" id="log-count-badge">0 Logs</span>
-                    <div class="spinner-grow spinner-grow-sm text-primary" role="status" id="live-indicator"></div>
+                    <span class="badge bg-primary" id="log-count-badge">0 Logs</span>
+                    <span class="status-indicator online" id="live-indicator" title="Polling for new logs"></span>
                 </div>
             </div>
             <div class="card-body p-0">
-                <div id="logs-container" class="p-4" style="max-height: 70vh; overflow-y: auto; background: #f8f9fa;">
+                <div id="logs-container" class="logs-feed-panel p-4">
                     <div class="text-center py-5">
                         <div class="spinner-border text-primary" role="status"></div>
                         <p class="mt-2 text-muted">Connecting to live feed...</p>
