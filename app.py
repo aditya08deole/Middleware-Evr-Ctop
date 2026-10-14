@@ -159,6 +159,22 @@ def create_app(config_name="default"):
         """Render add device page"""
         return render_template("add_device.html")
 
+    @app.route("/devices/<device_id>/edit")
+    def edit_device_page(device_id):
+        """Render the same Add Device form in edit mode, pre-filled with
+        this device's current config. The form itself (add_device.html)
+        detects edit mode from the `device` context var: pre-fills every
+        field, leaves secrets (api_key/auth_token/emqx_password) blank
+        with a "leave blank to keep existing" placeholder, and PUTs to
+        /devices/<id> instead of POSTing to /devices/ on submit."""
+        from utils.local_device_store import local_device_store
+
+        device = local_device_store.get_device_by_id(device_id)
+        if not device:
+            return render_template("add_device.html", device=None, edit_not_found=device_id)
+
+        return render_template("add_device.html", device=device)
+
     @app.route("/health")
     def health():
         """Health check for Docker/Monitoring"""

@@ -3,14 +3,24 @@
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-8">
+        {% if edit_not_found %}
+        <div class="alert alert-danger">
+            <i class="bi bi-exclamation-triangle"></i> Device "{{ edit_not_found }}" not found.
+        </div>
+        {% endif %}
         <div class="card">
             <div class="card-header">
                 <h4 class="mb-0" style="font-weight: 700; letter-spacing: -0.01em;">
+                    {% if device %}
+                    <i class="bi bi-pencil" style="color: var(--secondary-color);"></i> Edit Device: {{ device.name }}
+                    {% else %}
                     <i class="bi bi-plus-circle" style="color: var(--secondary-color);"></i> Add New Device
+                    {% endif %}
                 </h4>
             </div>
             <div class="card-body">
                 <form id="device-form">
+                    <input type="hidden" id="edit_device_id" value="{{ device.id if device else '' }}">
                     <!-- Shared suggestions for every sensor-field input below. ThingSpeak
                          devices pick field1-field8; EMQX devices instead type the literal
                          JSON key their firmware publishes (e.g. flow_rate) since EMQX
@@ -28,19 +38,19 @@
                     </datalist>
                     <div class="mb-3">
                         <label for="name" class="form-label">Device ID *</label>
-                        <input type="text" class="form-control" id="name" name="name" required>
+                        <input type="text" class="form-control" id="name" name="name" required value="{{ device.name if device else '' }}">
                         <div class="form-text">Unique identifier for this device (e.g., EVARA001, TANK_A1)</div>
                     </div>
-                    
+
                     <div class="mb-3">
                         <label for="device_type" class="form-label">Device Type *</label>
                         <select class="form-select" id="device_type" name="device_type" required>
-                            <option value="" disabled selected>Select device type...</option>
-                            <option value="EvaraTank">EvaraTank</option>
-                            <option value="EvaraFlow">EvaraFlow</option>
-                            <option value="EvaraDeep">EvaraDeep</option>
-                            <option value="EvaraTDS">EvaraTDS</option>
-                            <option value="EvaraValve">EvaraValve</option>
+                            <option value="" disabled {{ '' if device else 'selected' }}>Select device type...</option>
+                            <option value="EvaraTank" {{ 'selected' if device and device.device_type == 'EvaraTank' }}>EvaraTank</option>
+                            <option value="EvaraFlow" {{ 'selected' if device and device.device_type == 'EvaraFlow' }}>EvaraFlow</option>
+                            <option value="EvaraDeep" {{ 'selected' if device and device.device_type == 'EvaraDeep' }}>EvaraDeep</option>
+                            <option value="EvaraTDS" {{ 'selected' if device and device.device_type == 'EvaraTDS' }}>EvaraTDS</option>
+                            <option value="EvaraValve" {{ 'selected' if device and device.device_type == 'EvaraValve' }}>EvaraValve</option>
                         </select>
                         <div class="form-text">Select the type of your IoT device</div>
                     </div>
@@ -49,28 +59,28 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold">Data Source Platform *</label>
                         <div class="btn-group w-100" role="group" aria-label="Data source platform">
-                            <input type="radio" class="btn-check" name="data_source" id="platform-thingspeak" value="thingspeak" checked autocomplete="off" onchange="toggleAddDevicePlatform()">
+                            <input type="radio" class="btn-check" name="data_source" id="platform-thingspeak" value="thingspeak" {{ 'checked' if not device or device.data_source != 'emqx' }} autocomplete="off" onchange="toggleAddDevicePlatform()">
                             <label class="btn btn-outline-primary" for="platform-thingspeak">
                                 <i class="bi bi-cloud-arrow-down"></i> ThingSpeak
                             </label>
-                            <input type="radio" class="btn-check" name="data_source" id="platform-emqx" value="emqx" autocomplete="off" onchange="toggleAddDevicePlatform()">
+                            <input type="radio" class="btn-check" name="data_source" id="platform-emqx" value="emqx" {{ 'checked' if device and device.data_source == 'emqx' }} autocomplete="off" onchange="toggleAddDevicePlatform()">
                             <label class="btn btn-outline-success" for="platform-emqx">
                                 <i class="bi bi-broadcast"></i> EMQX (MQTT)
                             </label>
                         </div>
                         <div class="form-text">Choose how this device sends telemetry</div>
                     </div>
-                    
+
                     <!-- ThingSpeak Fields -->
                     <div id="thingspeak-fields-group">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="channel_id" class="form-label">ThingSpeak Channel ID *</label>
-                                <input type="text" class="form-control" id="channel_id" name="channel_id" required>
+                                <input type="text" class="form-control" id="channel_id" name="channel_id" required value="{{ device.channel_id if device else '' }}">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="api_key" class="form-label">ThingSpeak Read API Key *</label>
-                                <input type="password" class="form-control" id="api_key" name="api_key" required>
+                                <label for="api_key" class="form-label">ThingSpeak Read API Key {{ '' if device else '*' }}</label>
+                                <input type="password" class="form-control" id="api_key" name="api_key" {{ '' if device else 'required' }} placeholder="{{ 'Leave blank to keep existing' if device else '' }}">
                             </div>
                         </div>
                     </div>
@@ -83,36 +93,36 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="emqx_username" class="form-label">Username *</label>
-                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" required placeholder="e.g. device-EVT-XXX-001">
+                                <input type="text" class="form-control" id="emqx_username" name="emqx_username" required placeholder="e.g. device-EVT-XXX-001" value="{{ device.emqx_username if device else '' }}">
                                 <div class="form-text">Your device's MQTT login name</div>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="emqx_password" class="form-label">Password *</label>
-                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" required placeholder="Device's MQTT password">
+                                <label for="emqx_password" class="form-label">Password {{ '' if device else '*' }}</label>
+                                <input type="password" class="form-control" id="emqx_password" name="emqx_password" placeholder="{{ 'Leave blank to keep existing' if device else 'MQTT password for this device' }}">
                             </div>
                         </div>
                         <div class="mb-3">
                             <label for="emqx_topic" class="form-label">MQTT Topic *</label>
-                            <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evaratech/v1/EVT-XXX-001/telemetry">
+                            <input type="text" class="form-control" id="emqx_topic" name="emqx_topic" placeholder="evaratech/v1/EVT-XXX-001/telemetry" value="{{ device.emqx_topic if device else '' }}">
                             <div class="form-text">The topic this device publishes its readings to</div>
                         </div>
 
-                        <details class="mb-3">
+                        <details class="mb-3" {{ 'open' if device and device.data_source == 'emqx' }}>
                             <summary class="text-muted small" style="cursor: pointer;">Advanced broker settings (already configured — only open if this device uses a different broker)</summary>
                             <div class="border rounded p-3 mt-2">
                                 <div class="mb-3">
                                     <label for="emqx_broker_url" class="form-label">EMQX Broker Host / URL *</label>
-                                    <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" value="mqtt.evaratech.com" placeholder="broker.emqx.io">
+                                    <input type="text" class="form-control" id="emqx_broker_url" name="emqx_broker_url" value="{{ device.emqx_broker_url if device else 'mqtt.evaratech.com' }}" placeholder="broker.emqx.io">
                                 </div>
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label for="emqx_port" class="form-label">Port</label>
-                                        <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="443" min="1" max="65535">
+                                        <input type="number" class="form-control" id="emqx_port" name="emqx_port" value="{{ device.emqx_port if device else 443 }}" min="1" max="65535">
                                         <div class="form-text">443 (WebSocket+TLS) &middot; 1883 (TCP) &middot; 8883 (TCP+TLS)</div>
                                     </div>
                                     <div class="col-md-6 mb-3 d-flex align-items-end">
                                         <div class="form-check mb-2">
-                                            <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" checked onchange="toggleEmqxTlsFields()">
+                                            <input class="form-check-input" type="checkbox" id="emqx_use_tls" name="emqx_use_tls" {{ 'checked' if not device or device.emqx_use_tls }} onchange="toggleEmqxTlsFields()">
                                             <label class="form-check-label" for="emqx_use_tls">
                                                 <i class="bi bi-shield-lock"></i> Use SSL/TLS
                                             </label>
@@ -123,31 +133,31 @@
                                     <div class="col-md-6 mb-3">
                                         <label for="emqx_transport" class="form-label">Transport</label>
                                         <select class="form-select" id="emqx_transport" name="emqx_transport" onchange="toggleEmqxWsPathField()">
-                                            <option value="tcp">TCP (raw MQTT)</option>
-                                            <option value="websockets" selected>WebSocket</option>
+                                            <option value="tcp" {{ 'selected' if device and device.emqx_transport == 'tcp' }}>TCP (raw MQTT)</option>
+                                            <option value="websockets" {{ 'selected' if not device or device.emqx_transport != 'tcp' }}>WebSocket</option>
                                         </select>
                                         <div class="form-text">WebSocket works even when a network blocks 1883/8883 but allows 443.</div>
                                     </div>
                                     <div class="col-md-6 mb-3" id="emqx-ws-path-group" style="display: block;">
                                         <label for="emqx_ws_path" class="form-label">WebSocket Path</label>
-                                        <input type="text" class="form-control" id="emqx_ws_path" name="emqx_ws_path" value="/mqtt" placeholder="/mqtt">
+                                        <input type="text" class="form-control" id="emqx_ws_path" name="emqx_ws_path" value="{{ device.emqx_ws_path if device and device.emqx_ws_path else '/mqtt' }}" placeholder="/mqtt">
                                     </div>
                                 </div>
                                 <div class="mb-3">
                                     <label for="emqx_qos" class="form-label">QoS</label>
                                     <select class="form-select" id="emqx_qos" name="emqx_qos">
-                                        <option value="0">0 — At most once</option>
-                                        <option value="1" selected>1 — At least once (recommended)</option>
-                                        <option value="2">2 — Exactly once</option>
+                                        <option value="0" {{ 'selected' if device and device.emqx_qos == 0 }}>0 — At most once</option>
+                                        <option value="1" {{ 'selected' if not device or device.emqx_qos in (1, None) }}>1 — At least once (recommended)</option>
+                                        <option value="2" {{ 'selected' if device and device.emqx_qos == 2 }}>2 — Exactly once</option>
                                     </select>
                                 </div>
                                 <div id="emqx-tls-fields" style="display: block;">
                                     <div class="mb-3">
                                         <label for="emqx_ca_cert_path" class="form-label">CA Certificate Path</label>
-                                        <input type="text" class="form-control" id="emqx_ca_cert_path" name="emqx_ca_cert_path" placeholder="Leave blank unless using a self-hosted broker with its own certificate">
+                                        <input type="text" class="form-control" id="emqx_ca_cert_path" name="emqx_ca_cert_path" placeholder="Leave blank unless using a self-hosted broker with its own certificate" value="{{ device.emqx_ca_cert_path if device and device.emqx_ca_cert_path else '' }}">
                                     </div>
                                     <div class="mb-3 form-check">
-                                        <input class="form-check-input" type="checkbox" id="emqx_tls_insecure" name="emqx_tls_insecure">
+                                        <input class="form-check-input" type="checkbox" id="emqx_tls_insecure" name="emqx_tls_insecure" {{ 'checked' if device and device.emqx_tls_insecure }}>
                                         <label class="form-check-label" for="emqx_tls_insecure">
                                             Skip certificate verification (insecure — dev/test brokers only)
                                         </label>
@@ -159,29 +169,29 @@
                     
                     <div class="mb-3">
                         <label for="ctop_url_1" class="form-label">CTOP Endpoint URL *</label>
-                        <input type="url" class="form-control" id="ctop_url_1" name="ctop_url_1" required placeholder="https://ctop.iiit.ac.in/api/nodes/create-cin/391">
+                        <input type="url" class="form-control" id="ctop_url_1" name="ctop_url_1" required placeholder="https://ctop.iiit.ac.in/api/nodes/create-cin/391" value="{{ device.ctop_url_1 if device else '' }}">
                         <div class="form-text">CTOP node endpoint URL (include the node ID at the end)</div>
                     </div>
-                    
+
                     <div class="mb-3">
-                        <label for="auth_token" class="form-label">CTOP API Authorization Header *</label>
+                        <label for="auth_token" class="form-label">CTOP API Authorization Header {{ '' if device else '*' }}</label>
                         <div class="input-group">
-                            <input type="password" class="form-control" id="auth_token" name="auth_token" required placeholder="Bearer b1a8f4503e741e05f88699bb7c91c02a" style="font-family: monospace;">
+                            <input type="password" class="form-control" id="auth_token" name="auth_token" placeholder="{{ 'Leave blank to keep existing' if device else 'Bearer b1a8f4503e741e05f88699bb7c91c02a' }}" style="font-family: monospace;">
                             <button class="btn btn-outline-secondary" type="button" id="toggleAuthToken" onclick="toggleAuthVisibility()">
                                 <i class="bi bi-eye" id="authTokenIcon"></i>
                             </button>
                         </div>
                         <div class="form-text">Full Authorization header value (e.g., Bearer b1a8f4503e741e05f88699bb7c91c02a)</div>
                     </div>
-                    
+
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="latitude" class="form-label">Latitude</label>
-                            <input type="number" step="any" class="form-control" id="latitude" name="latitude" placeholder="e.g., 17.3850">
+                            <input type="number" step="any" class="form-control" id="latitude" name="latitude" placeholder="e.g., 17.3850" value="{{ device.latitude if device and device.latitude is not none else '' }}">
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="longitude" class="form-label">Longitude</label>
-                            <input type="number" step="any" class="form-control" id="longitude" name="longitude" placeholder="e.g., 78.4867">
+                            <input type="number" step="any" class="form-control" id="longitude" name="longitude" placeholder="e.g., 78.4867" value="{{ device.longitude if device and device.longitude is not none else '' }}">
                         </div>
                     </div>
                     
@@ -194,36 +204,36 @@
                         
                         <div class="mb-3">
                             <label for="tank_height" class="form-label">Tank Height (cm) *</label>
-                            <input type="number" step="any" class="form-control" id="tank_height" name="tank_height" placeholder="e.g., 200">
+                            <input type="number" step="any" class="form-control" id="tank_height" name="tank_height" placeholder="e.g., 200" value="{{ device.tank_height if device and device.tank_height is not none else '' }}">
                             <div class="form-text">Total height of the tank in centimeters</div>
                         </div>
-                        
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="distance_field" class="form-label">Distance Field *</label>
-                                <input type="text" class="form-control field-select" id="distance_field" name="distance_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. distance">
+                                <input type="text" class="form-control field-select" id="distance_field" name="distance_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. distance" value="{{ device.distance_field if device and device.distance_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="temperature_field" class="form-label">Temperature Field *</label>
-                                <input type="text" class="form-control field-select" id="temperature_field" name="temperature_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. temperature">
+                                <input type="text" class="form-control field-select" id="temperature_field" name="temperature_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. temperature" value="{{ device.temperature_field if device and device.temperature_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
-                        
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="filtering_method" class="form-label">Filtering Method</label>
                                 <select class="form-select filtering-method" id="filtering_method" name="filtering_method">
-                                    <option value="none">No Filtering</option>
-                                    <option value="median">Median</option>
-                                    <option value="average">Average</option>
+                                    <option value="none" {{ 'selected' if not device or device.filtering_method == 'none' or not device.filtering_method }}>No Filtering</option>
+                                    <option value="median" {{ 'selected' if device and device.filtering_method == 'median' }}>Median</option>
+                                    <option value="average" {{ 'selected' if device and device.filtering_method == 'average' }}>Average</option>
                                 </select>
                                 <div class="form-text">Method to filter sensor readings</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="filter_window" class="form-label">Filter Window Size</label>
-                                <input type="number" class="form-control filter-window" id="filter_window" name="filter_window" value="5" min="1" max="20">
+                                <input type="number" class="form-control filter-window" id="filter_window" name="filter_window" value="{{ device.filter_window if device and device.filter_window else 5 }}" min="1" max="20">
                                 <div class="form-text">Number of values to use for filtering</div>
                             </div>
                         </div>
@@ -239,29 +249,29 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="meter_reading_field" class="form-label">Meter Reading Field *</label>
-                                <input type="text" class="form-control field-select" id="meter_reading_field" name="meter_reading_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. total_liters">
+                                <input type="text" class="form-control field-select" id="meter_reading_field" name="meter_reading_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. total_liters" value="{{ device.meter_reading_field if device and device.meter_reading_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="flow_rate_field_ef" class="form-label">Flow Rate Field *</label>
-                                <input type="text" class="form-control field-select" id="flow_rate_field_ef" name="flow_rate_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. flow_rate">
+                                <input type="text" class="form-control field-select" id="flow_rate_field_ef" name="flow_rate_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. flow_rate" value="{{ device.flow_rate_field if device and device.device_type == 'EvaraFlow' and device.flow_rate_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
-                        
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="filtering_method_ef" class="form-label">Filtering Method</label>
                                 <select class="form-select filtering-method" id="filtering_method_ef" name="filtering_method">
-                                    <option value="none">No Filtering</option>
-                                    <option value="median">Median</option>
-                                    <option value="average">Average</option>
+                                    <option value="none" {{ 'selected' if not device or device.filtering_method == 'none' or not device.filtering_method }}>No Filtering</option>
+                                    <option value="median" {{ 'selected' if device and device.filtering_method == 'median' }}>Median</option>
+                                    <option value="average" {{ 'selected' if device and device.filtering_method == 'average' }}>Average</option>
                                 </select>
                                 <div class="form-text">Method to filter sensor readings</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="filter_window_ef" class="form-label">Filter Window Size</label>
-                                <input type="number" class="form-control filter-window" id="filter_window_ef" name="filter_window" value="5" min="1" max="20">
+                                <input type="number" class="form-control filter-window" id="filter_window_ef" name="filter_window" value="{{ device.filter_window if device and device.filter_window else 5 }}" min="1" max="20">
                                 <div class="form-text">Number of values to use for filtering</div>
                             </div>
                         </div>
@@ -277,29 +287,29 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="flow_rate_field_ev" class="form-label">Flow Rate Field *</label>
-                                <input type="text" class="form-control field-select" id="flow_rate_field_ev" name="flow_rate_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. flow_rate">
+                                <input type="text" class="form-control field-select" id="flow_rate_field_ev" name="flow_rate_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. flow_rate" value="{{ device.flow_rate_field if device and device.device_type == 'EvaraValve' and device.flow_rate_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="liters_field" class="form-label">Liters Field *</label>
-                                <input type="text" class="form-control field-select" id="liters_field" name="liters_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. liters">
+                                <input type="text" class="form-control field-select" id="liters_field" name="liters_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. liters" value="{{ device.liters_field if device and device.liters_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
-                        
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="filtering_method_ev" class="form-label">Filtering Method</label>
                                 <select class="form-select filtering-method" id="filtering_method_ev" name="filtering_method">
-                                    <option value="none">No Filtering</option>
-                                    <option value="median">Median</option>
-                                    <option value="average">Average</option>
+                                    <option value="none" {{ 'selected' if not device or device.filtering_method == 'none' or not device.filtering_method }}>No Filtering</option>
+                                    <option value="median" {{ 'selected' if device and device.filtering_method == 'median' }}>Median</option>
+                                    <option value="average" {{ 'selected' if device and device.filtering_method == 'average' }}>Average</option>
                                 </select>
                                 <div class="form-text">Method to filter sensor readings</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="filter_window_ev" class="form-label">Filter Window Size</label>
-                                <input type="number" class="form-control filter-window" id="filter_window_ev" name="filter_window" value="5" min="1" max="20">
+                                <input type="number" class="form-control filter-window" id="filter_window_ev" name="filter_window" value="{{ device.filter_window if device and device.filter_window else 5 }}" min="1" max="20">
                                 <div class="form-text">Number of values to use for filtering</div>
                             </div>
                         </div>
@@ -314,23 +324,23 @@
                         
                         <div class="mb-3">
                             <label for="distance_field_ed" class="form-label">Distance Field (cm) *</label>
-                            <input type="text" class="form-control field-select" id="distance_field_ed" name="distance_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. distance">
+                            <input type="text" class="form-control field-select" id="distance_field_ed" name="distance_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. distance" value="{{ device.distance_field if device and device.device_type == 'EvaraDeep' and device.distance_field else '' }}">
                             <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                         </div>
-                        
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="filtering_method_ed" class="form-label">Filtering Method</label>
                                 <select class="form-select filtering-method" id="filtering_method_ed" name="filtering_method">
-                                    <option value="none">No Filtering</option>
-                                    <option value="median">Median</option>
-                                    <option value="average">Average</option>
+                                    <option value="none" {{ 'selected' if not device or device.filtering_method == 'none' or not device.filtering_method }}>No Filtering</option>
+                                    <option value="median" {{ 'selected' if device and device.filtering_method == 'median' }}>Median</option>
+                                    <option value="average" {{ 'selected' if device and device.filtering_method == 'average' }}>Average</option>
                                 </select>
                                 <div class="form-text">Method to filter sensor readings</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="filter_window_ed" class="form-label">Filter Window Size</label>
-                                <input type="number" class="form-control filter-window" id="filter_window_ed" name="filter_window" value="5" min="1" max="20">
+                                <input type="number" class="form-control filter-window" id="filter_window_ed" name="filter_window" value="{{ device.filter_window if device and device.filter_window else 5 }}" min="1" max="20">
                                 <div class="form-text">Number of values to use for filtering</div>
                             </div>
                         </div>
@@ -346,51 +356,51 @@
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="temperature_field_et" class="form-label">Temperature Field *</label>
-                                <input type="text" class="form-control field-select" id="temperature_field_et" name="temperature_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. temperature">
+                                <input type="text" class="form-control field-select" id="temperature_field_et" name="temperature_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. temperature" value="{{ device.temperature_field if device and device.device_type == 'EvaraTDS' and device.temperature_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="tds_field" class="form-label">TDS Field (ppm) *</label>
-                                <input type="text" class="form-control field-select" id="tds_field" name="tds_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. tds">
+                                <input type="text" class="form-control field-select" id="tds_field" name="tds_field" list="field-options-list" autocomplete="off" placeholder="field1-field8, or e.g. tds" value="{{ device.tds_field if device and device.tds_field else '' }}">
                                 <div class="form-text">ThingSpeak: field1-field8. EMQX: the exact JSON key your device publishes (matched by name, not position).</div>
                             </div>
                         </div>
-                        
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="filtering_method_et" class="form-label">Filtering Method</label>
                                 <select class="form-select filtering-method" id="filtering_method_et" name="filtering_method">
-                                    <option value="none">No Filtering</option>
-                                    <option value="median">Median</option>
-                                    <option value="average">Average</option>
+                                    <option value="none" {{ 'selected' if not device or device.filtering_method == 'none' or not device.filtering_method }}>No Filtering</option>
+                                    <option value="median" {{ 'selected' if device and device.filtering_method == 'median' }}>Median</option>
+                                    <option value="average" {{ 'selected' if device and device.filtering_method == 'average' }}>Average</option>
                                 </select>
                                 <div class="form-text">Method to filter sensor readings</div>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="filter_window_et" class="form-label">Filter Window Size</label>
-                                <input type="number" class="form-control filter-window" id="filter_window_et" name="filter_window" value="5" min="1" max="20">
+                                <input type="number" class="form-control filter-window" id="filter_window_et" name="filter_window" value="{{ device.filter_window if device and device.filter_window else 5 }}" min="1" max="20">
                                 <div class="form-text">Number of values to use for filtering</div>
                             </div>
                         </div>
                     </div>
                     
                     <div class="mb-3 form-check">
-                        <input type="checkbox" class="form-check-input" id="is_active" name="is_active" checked>
+                        <input type="checkbox" class="form-check-input" id="is_active" name="is_active" {{ 'checked' if not device or device.is_active }}>
                         <label class="form-check-label" for="is_active">Activate device immediately</label>
                     </div>
-                    
+
                     <div id="loading" style="display: none; text-align: center; padding: 20px;">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
                     </div>
-                    
+
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-save"></i> Add Device
+                            <i class="bi bi-save"></i> {{ 'Save Changes' if device else 'Add Device' }}
                         </button>
-                        <a href="/" class="btn btn-secondary">
-                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        <a href="{{ '/device-detail/' + device.id if device else '/' }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> {{ 'Cancel' if device else 'Back to Dashboard' }}
                         </a>
                     </div>
                 </form>
@@ -559,21 +569,48 @@ function toggleAuthVisibility() {
     }
 }
 
+const EDIT_DEVICE_ID = document.getElementById('edit_device_id').value || null;
+
+// Edit mode: the platform/device-type sections are normally only revealed
+// by the user interacting with their selectors (onchange handlers) — on a
+// fresh edit load there's a pre-selected value but no change event has
+// fired yet, so the matching section would stay hidden. Secrets
+// (api_key/auth_token/emqx_password) also need their `required` dropped
+// here specifically — toggleAddDevicePlatform() re-applies `required` to
+// the platform-specific ones, so this has to run after it, not before.
+if (EDIT_DEVICE_ID) {
+    toggleAddDevicePlatform();
+    toggleEmqxTlsFields();
+    toggleEmqxWsPathField();
+    showDeviceFields(document.getElementById('device_type').value);
+    document.getElementById('api_key').removeAttribute('required');
+    document.getElementById('auth_token').removeAttribute('required');
+    document.getElementById('emqx_password').removeAttribute('required');
+}
+
 document.getElementById('device-form').addEventListener('submit', function(e) {
     e.preventDefault();
-    
+
     const formData = new FormData(this);
     const deviceType = formData.get('device_type');
     const isEmqx = document.getElementById('platform-emqx').checked;
     
+    // On create, a blank secret is a validation error (caught below). On
+    // edit, a blank secret means "leave it as-is" — JSON.stringify drops
+    // an `undefined` value entirely, so the PUT payload simply won't
+    // contain that key, and /devices/<id> already treats an absent field
+    // as "don't touch it" rather than "clear it".
+    const rawApiKey = formData.get('api_key');
+    const rawAuthToken = formData.get('auth_token');
+
     const data = {
         name: formData.get('name'),
         device_type: deviceType,
         data_source: isEmqx ? 'emqx' : 'thingspeak',
         channel_id: isEmqx ? 'emqx' : formData.get('channel_id'),
-        api_key: isEmqx ? 'not_used_emqx' : formData.get('api_key'),
+        api_key: isEmqx ? 'not_used_emqx' : (rawApiKey || (EDIT_DEVICE_ID ? undefined : rawApiKey)),
         ctop_url_1: formData.get('ctop_url_1'),
-        auth_token: formData.get('auth_token'),
+        auth_token: rawAuthToken || (EDIT_DEVICE_ID ? undefined : rawAuthToken),
         latitude: formData.get('latitude') ? parseFloat(formData.get('latitude')) : null,
         longitude: formData.get('longitude') ? parseFloat(formData.get('longitude')) : null,
         is_active: document.getElementById('is_active').checked
@@ -583,7 +620,12 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
         data.emqx_broker_url = formData.get('emqx_broker_url');
         data.emqx_port = parseInt(formData.get('emqx_port')) || 1883;
         data.emqx_username = formData.get('emqx_username') || null;
-        data.emqx_password = formData.get('emqx_password') || null;
+        // Blank on a create means "no password" (null); blank on an edit
+        // means "don't change it" — the key is dropped from the payload
+        // entirely further below so PUT's existing keep-if-absent
+        // handling applies, instead of writing an empty password over
+        // whatever's already stored.
+        data.emqx_password = formData.get('emqx_password') || (EDIT_DEVICE_ID ? undefined : null);
         data.emqx_topic = formData.get('emqx_topic');
         data.emqx_use_tls = document.getElementById('emqx_use_tls').checked;
         data.emqx_qos = parseInt(formData.get('emqx_qos')) || 1;
@@ -651,24 +693,29 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
         }
     }
     
-    // Basic validation
-    if (!data.name || !data.device_type || !data.ctop_url_1 || !data.auth_token) {
+    // Basic validation — auth_token/api_key/emqx_password are only
+    // required when creating; on edit, an absent (undefined) value just
+    // means "keep the existing one", not "invalid".
+    if (!data.name || !data.device_type || !data.ctop_url_1 || (!EDIT_DEVICE_ID && !data.auth_token)) {
         showAlert('Please fill in all required common fields', 'warning');
         return;
     }
-    if (isEmqx && (!data.emqx_broker_url || !data.emqx_topic || !data.emqx_username || !data.emqx_password)) {
+    if (isEmqx && (!data.emqx_broker_url || !data.emqx_topic || !data.emqx_username || (!EDIT_DEVICE_ID && !data.emqx_password))) {
         showAlert('Please fill in Username, Password, and MQTT Topic for this EMQX device', 'warning');
         return;
     }
-    if (!isEmqx && (!data.channel_id || !data.api_key)) {
+    if (!isEmqx && (!data.channel_id || (!EDIT_DEVICE_ID && !data.api_key))) {
         showAlert('Please enter ThingSpeak Channel ID and API Key', 'warning');
         return;
     }
-    
+
     showLoading();
-    
-    fetch('/devices/', {
-        method: 'POST',
+
+    const url = EDIT_DEVICE_ID ? `/devices/${EDIT_DEVICE_ID}` : '/devices/';
+    const method = EDIT_DEVICE_ID ? 'PUT' : 'POST';
+
+    fetch(url, {
+        method: method,
         headers: {
             'Content-Type': 'application/json'
         },
@@ -678,9 +725,9 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
     .then(result => {
         hideLoading();
         if (result.success) {
-            showAlert('Device added successfully!', 'success');
+            showAlert(EDIT_DEVICE_ID ? 'Device updated successfully!' : 'Device added successfully!', 'success');
             setTimeout(() => {
-                window.location.href = '/';
+                window.location.href = EDIT_DEVICE_ID ? `/device-detail/${EDIT_DEVICE_ID}` : '/';
             }, 1500);
         } else {
             showAlert(`Error: ${result.error}`, 'danger');
@@ -688,8 +735,8 @@ document.getElementById('device-form').addEventListener('submit', function(e) {
     })
     .catch(error => {
         hideLoading();
-        console.error('Error adding device:', error);
-        showAlert('Error adding device. Please try again.', 'danger');
+        console.error('Error saving device:', error);
+        showAlert(EDIT_DEVICE_ID ? 'Error updating device. Please try again.' : 'Error adding device. Please try again.', 'danger');
     });
 });
 </script>

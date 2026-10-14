@@ -537,15 +537,14 @@ async function loadDeviceActivityChart() {
 }
 
 function editDevice() {
-    // There's no standalone edit page/route — this used to point at
-    // /devices/<id>/edit, which never existed (always 404'd). The only
-    // part of a device actually editable from this page right now is its
-    // CTOP delivery endpoints, below, so jump straight there instead of
-    // navigating to a dead link.
-    const card = document.getElementById('ctop-url-1-input');
-    if (card) {
-        card.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        card.focus();
+    // /devices/<id>/edit now renders the Add Device form in edit mode
+    // (pre-filled, PUTs instead of POSTs) — this used to point at the
+    // same URL back when that route didn't exist (always 404'd), then
+    // was repurposed to just scroll to the CTOP endpoints card below as a
+    // stopgap. Restored to real navigation now that the page exists.
+    const deviceId = '{{ device.id if device else "" }}';
+    if (deviceId) {
+        window.location.href = `/devices/${deviceId}/edit`;
     }
 }
 
