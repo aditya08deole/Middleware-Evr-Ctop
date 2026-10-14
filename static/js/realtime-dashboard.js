@@ -282,8 +282,17 @@ class RealtimeDashboard {
             let row = tbody.querySelector(`tr[data-device-id="${device.id}"]`);
             const statusBucket = getStatusBucket(device);
             const hasError = statusBucket === 'error';
+            // Both "genuinely never processed a reading" (last_status was
+            // never set — e.g. a new device missing required config like
+            // tank_height, so preprocessing silently produces nothing to
+            // send) and "went stale" (explicit last_status: 'inactive')
+            // used to render identically as orange 'status-pending' — making
+            // "quietly waiting on missing setup" indistinguishable from
+            // "was working, now just hasn't reported in a while". Only the
+            // former gets the distinct purple 'status-unconfigured' class.
             const statusClass = statusBucket === 'active' ? 'status-success' :
-                               hasError ? 'status-error' : 'status-pending';
+                               hasError ? 'status-error' :
+                               !device.last_status ? 'status-unconfigured' : 'status-pending';
             const lastSyncHtml = formatSyncTime(device.last_sync_time);
             const statusText = (device.last_status || 'pending').toUpperCase();
             

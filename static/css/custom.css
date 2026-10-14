@@ -1028,6 +1028,18 @@ h1, h2, h3, h4, h5, h6 {
     border: 0.5px solid rgba(255, 149, 0, 0.25);
 }
 
+/* Distinct from status-pending above: this is specifically "never
+   produced a reading at all" (last_status was never set — e.g. missing
+   required config like tank_height), not "went stale after working
+   fine". #6B21A8 on this background computes to ~7.8:1 contrast
+   (well past the 4.5:1 WCAG AA threshold for normal-size text), same
+   verification approach as the other status-badge colors above. */
+.status-badge.status-unconfigured {
+    background: rgba(175, 82, 222, 0.12);
+    color: #6B21A8;
+    border: 0.5px solid rgba(175, 82, 222, 0.25);
+}
+
 /* Actionable status subtitle (why a device is inactive/errored) */
 .status-detail-cell {
     display: block;
