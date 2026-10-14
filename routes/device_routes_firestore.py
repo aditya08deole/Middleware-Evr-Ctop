@@ -632,6 +632,25 @@ def toggle_device(device_id):
     # Update Local Mirror Cache immediately
     local_device_store.update_device_fields(device_id, {"is_active": new_status})
 
+    # Refresh MQTT subscription if EMQX device — PUT /devices/<id> already
+    # does this when is_active changes there, but this separate route never
+    # did, so toggling a device off here left its MQTT client connected and
+    # still buffering messages (silently, since the scheduler skips
+    # inactive devices), and toggling back on reused that same stale buffer
+    # instead of starting fresh. Matches the PUT route's behavior now.
+    if device.get("data_source") == "emqx":
+        try:
+            from utils.scheduler_firestore import emqx_service
+
+            if new_status:
+                emqx_service.subscribe_device(device_id, {**device, "is_active": new_status})
+            else:
+                emqx_service.unsubscribe_device(device_id)
+        except Exception as mqtt_err:
+            current_app.logger.warning(
+                f"EMQX subscription update failed for {device_id}: {mqtt_err}"
+            )
+
     return jsonify(
         {
             "success": True,
