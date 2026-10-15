@@ -3,6 +3,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timezone
 import logging
 import os
+import re
 import threading
 from firebase.firestore_service import FirestoreService
 from services import ThingSpeakService, PreprocessService, CTOPService, EMQXService
@@ -26,6 +27,33 @@ CTOP_BACKOFF_LEVEL_1 = 5
 CTOP_BACKOFF_LEVEL_1_SECONDS = 60
 CTOP_BACKOFF_LEVEL_2 = 20
 CTOP_BACKOFF_LEVEL_2_SECONDS = 300
+
+
+def _is_permanent_ctop_failure(error_message):
+    """True when the last CTOP error was a non-retriable 4xx response —
+    the same rule ctop_service.py's own internal retry loop already uses
+    to stop burning attempts on a single send. Used below to decide
+    whether an EMQX message that can never succeed should be dropped
+    (confirm_consumed) instead of rolled back forever.
+
+    Rolling back unconditionally on ANY failure (the previous behavior)
+    turns a single permanently-malformed reading into a head-of-line
+    block: EMQX's buffer always re-fetches the OLDEST pending message, so
+    if that exact message keeps failing with the exact same error, every
+    later (possibly perfectly valid) message queued behind it never gets
+    a chance to be sent — confirmed live against EVT-EF-002, which got
+    stuck retrying one reading missing a required CTOP field for minutes
+    while newer readings piled up behind it. A transient failure (5xx,
+    timeout, connection error, 429) still rolls back as before, since
+    retrying the identical payload later can legitimately succeed.
+    """
+    if not error_message:
+        return False
+    match = re.match(r"HTTP (\d{3})", str(error_message))
+    if not match:
+        return False
+    code = int(match.group(1))
+    return 400 <= code < 500 and code != 429
 
 
 def _ctop_backoff_seconds(consecutive_failures):
@@ -448,9 +476,12 @@ def process_device(device_id, device_data):
             device_id, fetch_success=True, send_success=success_count > 0
         )
 
-        # Confirm EMQX buffer consumption on any success, rollback on total failure
+        # Confirm EMQX buffer consumption on success OR a permanent (4xx)
+        # failure — see _is_permanent_ctop_failure for why a permanent
+        # failure must NOT roll back. Only a transient failure rolls back
+        # for a later retry.
         if data_source == "emqx":
-            if success_count > 0:
+            if success_count > 0 or _is_permanent_ctop_failure(last_send_error):
                 emqx_service.confirm_consumed(device_id)
             else:
                 emqx_service.rollback_fetch(device_id)
