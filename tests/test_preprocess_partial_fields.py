@@ -66,10 +66,51 @@ def test_evaraflow_partial_fields():
     assert processed[1]["MeterReading"] == 101.2
     assert processed[1]["FlowRate"] == 0.0
 
-    # Feed 3 assertion (only FlowRate)
+    # Feed 3 assertion (only FlowRate this message — the firmware sends the
+    # cumulative meter total less often than flow_rate, or as null on
+    # lighter "heartbeat" frames). CTOP's API requires water_consumption
+    # on every payload, so the last real meter reading seen for this
+    # device (101.2, from feed 2) is carried forward rather than omitted —
+    # omitting it here previously produced "HTTP 400: Missing parameter
+    # water_consumption" even though nothing was actually wrong.
     assert processed[2]["entry_id"] == "3"
-    assert "MeterReading" not in processed[2]
+    assert processed[2]["MeterReading"] == 101.2
     assert processed[2]["FlowRate"] == 1.5
+
+
+def test_evaraflow_no_fabricated_meter_reading_before_any_real_one():
+    """A device that has NEVER reported a real cumulative total yet (brand
+    new, or every message so far has been flow_rate-only) must not have one
+    fabricated out of thin air — MeterReading stays omitted until a real
+    value actually arrives, same as before this fix."""
+    service = PreprocessService()
+
+    device = MockDevice(
+        device_type="EvaraFlow",
+        meter_reading_field="field3",
+        flow_rate_field="field2",
+        filtering_method="none",
+        filter_window=5,
+        latitude=None,
+        longitude=None,
+    )
+
+    feeds = [
+        {
+            "entry_id": "1",
+            "created_at": "2026-07-11T12:00:00Z",
+            "field3": None,
+            "field2": "0.8",
+        },
+    ]
+
+    processed = service._preprocess_evaraflow(
+        "test-device-flow-fresh", device, feeds
+    )
+
+    assert len(processed) == 1
+    assert "MeterReading" not in processed[0]
+    assert processed[0]["FlowRate"] == 0.8
 
 
 def test_evaratank_partial_fields():

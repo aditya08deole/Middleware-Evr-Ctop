@@ -88,6 +88,20 @@ class PreprocessService:
         # large/misconfigured window can't grow memory unbounded per device.
         self._MAX_FILTER_HISTORY = 50
 
+        # Last known-good cumulative reading per (device_id, field_key) —
+        # e.g. EvaraFlow's meter_reading_field. Some flow-meter firmware
+        # only includes the cumulative total on a slower cadence than
+        # flow_rate (or sends it as JSON null on lighter "heartbeat"
+        # messages), so a given MQTT message can carry a real flow_rate
+        # with no meter reading at all. CTOP's API requires both fields on
+        # every payload — see _preprocess_evaraflow below — so a missing
+        # cumulative total falls back to the last real one seen for this
+        # device rather than omitting the field outright (which produced
+        # "HTTP 400: Missing parameter water_consumption" even though
+        # nothing was actually wrong with the device).
+        self._last_cumulative_value = {}
+        self._last_cumulative_lock = threading.Lock()
+
         # Devices already warned about a guessed EMQX field mapping (see
         # _check_emqx_field_mapping) — logged once per device, not every
         # 15-second tick, to avoid spamming the log for a condition that
@@ -474,6 +488,20 @@ class PreprocessService:
             # 'FlowRate': 0.0} sent to CTOP as if it were a real reading).
             if meter_val is None and flow_val is None:
                 continue
+
+            cache_key = (device_id, "meter_reading")
+            if meter_val is not None:
+                with self._last_cumulative_lock:
+                    self._last_cumulative_value[cache_key] = meter_val
+            elif flow_val is not None:
+                # flow_rate arrived with no cumulative total this message
+                # (firmware sends it less often, or as null on lighter
+                # frames) — carry forward the last real reading instead of
+                # dropping the field, so CTOP's required water_consumption
+                # parameter is always present when there's a real reading
+                # to send at all.
+                with self._last_cumulative_lock:
+                    meter_val = self._last_cumulative_value.get(cache_key)
 
             processed = {
                 "LCT": (
