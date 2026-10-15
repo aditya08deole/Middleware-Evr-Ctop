@@ -6,12 +6,58 @@ Complete guide to running the system locally, with Docker, and deploying to prod
 
 ## Table of Contents
 
+0. [Quick Deploy (TL;DR)](#quick-deploy-tldr)
 1. [Local Development Setup](#local-development-setup)
 2. [Docker Setup](#docker-setup)
 3. [Firebase Credentials Setup](#firebase-credentials-setup)
 4. [Server Deployment](#server-deployment)
 5. [Mirror File Feature](#mirror-file-feature)
 6. [Troubleshooting](#troubleshooting)
+
+---
+
+## Quick Deploy (TL;DR)
+
+The `ctop-middleware-deploy.zip` built for this project already contains the app code **and** its three secret files, so a fresh server needs almost nothing — just Docker and five commands.
+
+### Where the secrets are
+
+All three live in the project root and are already packed inside the zip — nothing to create by hand:
+
+| File | What it is | Used for |
+|---|---|---|
+| `.env` | Flask config (`SECRET_KEY`, `DATABASE_URL`, `FIREBASE_PROJECT_ID`, log level, etc.) | App startup config |
+| `service-account-key.json` | Firebase service-account private key | Auth to Firestore (device configs/logs) |
+| `encryption.key` | Fernet symmetric key | Encrypts/decrypts device API keys stored in the DB |
+
+If any of these is missing on the server, the app either fails to start (`service-account-key.json`) or — for `encryption.key` — silently **generates a new one** on first boot, which makes any previously-encrypted device credentials unreadable. Always carry the existing files over; don't let the server generate fresh ones.
+
+### The five commands (on the server)
+
+```bash
+# 1. One-time only — install Docker (skip if already installed)
+curl -fsSL https://get.docker.com | sudo sh
+
+# 2. Make the app directory and unpack the zip into it
+sudo mkdir -p /opt/ctop-middleware && cd /opt/ctop-middleware
+unzip ~/ctop-middleware-deploy.zip   # scp'd here beforehand — see Step 6 below
+
+# 3. Lock down the secret files
+chmod 600 .env service-account-key.json encryption.key
+
+# 4. Build and start (app + bundled nginx reverse proxy, port 80)
+docker-compose up -d --build
+
+# 5. Verify it's up
+curl http://localhost/health
+```
+
+That's it — no manual `.env` editing, no Firebase console steps, no certbot, because the zip ships working credentials and `docker-compose.yml` already wires up gunicorn + an nginx reverse proxy on port 80. The app is now reachable at `http://<server-ip>/`.
+
+**Only go further if you need:**
+- A real domain name + HTTPS → see [Step 11–14 below](#step-11-install-and-configure-nginx-reverse-proxy) (certbot)
+- Auto-start on server reboot → see [systemd service](#method-2-systemd-service-optional-for-boot-auto-start) (Docker's `restart: always` already covers crash recovery)
+- To rebuild the zip after local code changes → see [Preparing a Deployment ZIP](#step-55-prepare-a-deployment-zip-from-your-local-machine)
 
 ---
 
@@ -731,7 +777,7 @@ sudo chmod +x /usr/local/bin/docker-compose
 ```
 
 **What it does**: Downloads Docker Compose binary and makes it executable  
-**Why**: Needed to run multi-container setups (reserved for future)  
+**Why**: Needed to run the multi-container setup — `docker-compose.yml` already defines two services: `middleware` (the app) and an optional `nginx` reverse-proxy container  
 **Time**: 30 seconds  
 **Verify**:
 ```bash
@@ -755,6 +801,61 @@ cd /opt/ctop-middleware
 
 ---
 
+### Step 5.5: Prepare a Deployment ZIP (From Your Local Machine)
+
+Do this on your **local** machine (where the project currently lives) before uploading anything.
+
+**1. Stop everything local first**
+
+```bash
+# Windows PowerShell — find what's on the dev port
+netstat -ano | findstr :8080
+Stop-Process -Id <pid> -Force
+
+# Docker, if it was running
+docker-compose down
+```
+
+Make sure no leftover `python app.py` / `docker-compose` process is still writing to the project folder — a live SQLite file or log gets corrupted/half-written if you zip it mid-write.
+
+**2. Delete local-only runtime artifacts** — these are regenerated automatically on first run and should never ship:
+
+```bash
+# From the project root
+rm -rf __pycache__ */__pycache__ .pytest_cache .ruff_cache venv
+rm -f app.pid app_stdout.log app_stderr.log *.log
+rm -f instance/*.db instance/*.lock
+```
+
+| Exclude from zip | Why |
+|---|---|
+| `venv/` | Platform-specific; rebuilt on the server with `pip install -r requirements.txt` |
+| `.git/`, `.github/` | Version control / CI metadata, not needed to run the app |
+| `__pycache__/`, `.pytest_cache/`, `.ruff_cache/` | Regenerated automatically |
+| `*.log`, `app.pid` | Local dev-server runtime output |
+| `instance/*.db`, `instance/*.lock` | Local dev data — the server builds its own (Docker `entrypoint.sh` runs `db.create_all()`; the Firestore mirror resyncs on startup) |
+| `.claude/` | Local assistant tooling, unrelated to the app |
+
+**Keep**: `.env`, `service-account-key.json`, `encryption.key` — this project's current deployment copies these live credentials inside the zip rather than setting them up separately on the server. Since the zip is now a self-contained bundle of production secrets, treat the zip file itself like a password: send it over a secure/private channel only, delete it after the server copy is confirmed, and `chmod 600` the three files once unpacked.
+
+**3. Create the archive**
+
+```powershell
+# Windows PowerShell, from the project root
+Compress-Archive -Path * -DestinationPath ..\ctop-middleware-deploy.zip -Force
+```
+
+```bash
+# Linux/Mac equivalent
+cd ..
+zip -r ctop-middleware-deploy.zip Middleware-Evr-CtoP \
+  -x "*/venv/*" "*/.git/*" "*/.github/*" "*/__pycache__/*" "*.log" "*.pid"
+```
+
+**Result**: One `ctop-middleware-deploy.zip` containing the app code, templates/static assets, `requirements.txt`, `Dockerfile`, `docker-compose.yml`, `nginx/`, and the three credential files — ready to transfer to the server.
+
+---
+
 ### Step 6: Upload Project Files
 
 **Option A: Clone from Git** (if using Git repository)
@@ -763,11 +864,24 @@ cd /opt/ctop-middleware
 git clone https://github.com/your-org/ctop-middleware .
 ```
 
-**Option B: Upload via SCP**
+**Option B: Upload via SCP (raw folder)**
 
 ```bash
 # From your local machine:
 scp -r . user@your-server:/opt/ctop-middleware/
+```
+
+**Option C: Upload the prepared ZIP (recommended for a one-off manual deploy)**
+
+```bash
+# From your local machine:
+scp ctop-middleware-deploy.zip user@your-server:/opt/ctop-middleware/
+
+# Then on the server:
+cd /opt/ctop-middleware
+unzip ctop-middleware-deploy.zip
+rm ctop-middleware-deploy.zip
+chmod 600 .env service-account-key.json encryption.key
 ```
 
 **What it does**: Transfers project files to server  
@@ -868,6 +982,10 @@ docker-compose ps
 ---
 
 ### Step 11: Install and Configure nginx (Reverse Proxy)
+
+> **Which nginx should I use?** `docker-compose.yml` already ships an **optional `nginx` container** (config at `nginx/nginx.conf`) that proxies port 80 → the `middleware` container on 8080. That's the fastest path if you just want plain HTTP or you're terminating TLS somewhere else (e.g. a cloud load balancer). It does **not** currently have a 443/SSL block wired up.
+>
+> If you want **Let's Encrypt/certbot-managed HTTPS directly on this box** (the flow below), install nginx on the **host** instead and stop/remove the `nginx` service from `docker-compose.yml` first — two processes can't both bind port 80. Either approach works; don't run both at once.
 
 ```bash
 sudo apt install -y nginx
