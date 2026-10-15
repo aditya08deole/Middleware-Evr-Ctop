@@ -216,12 +216,14 @@ def create_app(config_name="default"):
         device = local_device_store.get_device_by_id(device_id)
 
         if device:
-            # For logs, we still fetch from Firebase as logs are not mirrored locally
-            # (they are write-only / fetch-on-demand)
-            from firebase.firestore_service import FirestoreService
+            # CTOP-send logs live only in the in-memory logger (see
+            # utils/memory_logger.py) — the Firestore "logs" collection is
+            # never written to for these (only on rare device-creation
+            # events), so querying it here on every page view was a
+            # pure-waste Firestore read for data that was never there.
+            from utils.memory_logger import memory_logger
 
-            fs = FirestoreService()
-            logs = fs.get_logs(device_id=device_id, limit=10)
+            logs = memory_logger.get_logs(device_id=device_id, limit=10)
             return render_template("device_detail.html", device=device, logs=logs)
 
         # Fallback to SQLite

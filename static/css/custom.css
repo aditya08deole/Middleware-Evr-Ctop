@@ -3,6 +3,19 @@
    CTOP IoT Data Pipeline Middleware
    ========================================================================== */
 
+/* Shared inline-SVG icon set (templates/_icons.html). These replace
+   Bootstrap Icon <i> glyphs 1:1 as pure decoration — stroke="currentColor"
+   in the SVG itself means every existing "color: ..." rule written for
+   the old <i> glyphs keeps working unchanged; only size needed a new rule
+   since font-size doesn't apply to an <svg>. */
+.icon-svg {
+    width: 18px;
+    height: 18px;
+    display: inline-block;
+    vertical-align: -0.15em;
+    flex-shrink: 0;
+}
+
 :root {
     /* Apple / VisionOS System Colors */
     --ios-blue: #007AFF;
@@ -239,6 +252,11 @@ h1, h2, h3, h4, h5, h6 {
     box-shadow: 0 3px 10px var(--primary-glow);
 }
 
+.brand-icon-wrapper .icon-svg {
+    width: 19px;
+    height: 19px;
+}
+
 .brand-text {
     display: flex;
     flex-direction: column;
@@ -307,12 +325,19 @@ h1, h2, h3, h4, h5, h6 {
         inset 0 1px 1px rgba(255, 255, 255, 0.4);
 }
 
-.nav-menu .nav-link i {
+.nav-menu .nav-link i,
+.nav-menu .nav-link .icon-svg {
     font-size: 1.15rem;
     transition: transform var(--spring-snappy);
 }
 
-.nav-menu .nav-link:hover i {
+.nav-menu .nav-link .icon-svg {
+    width: 18px;
+    height: 18px;
+}
+
+.nav-menu .nav-link:hover i,
+.nav-menu .nav-link:hover .icon-svg {
     transform: scale(1.15);
 }
 
@@ -337,8 +362,11 @@ h1, h2, h3, h4, h5, h6 {
     transition: all var(--spring-snappy);
 }
 
-.nav-icon-action-btn i {
+.nav-icon-action-btn i,
+.nav-icon-action-btn .icon-svg {
     font-size: 1.2rem;
+    width: 19px;
+    height: 19px;
 }
 
 .nav-icon-action-btn:hover {
@@ -616,6 +644,16 @@ h1, h2, h3, h4, h5, h6 {
     align-items: center;
     justify-content: center;
     font-size: 1.15rem;
+    transition: transform var(--spring-snappy);
+}
+
+.stats-card-icon .icon-svg {
+    width: 22px;
+    height: 22px;
+}
+
+.stats-card:hover .stats-card-icon {
+    transform: scale(1.08) rotate(-2deg);
 }
 
 .stats-card-icon-primary { background: var(--ios-blue-bg); color: var(--ios-blue); }

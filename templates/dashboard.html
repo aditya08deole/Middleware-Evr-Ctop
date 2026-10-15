@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 
 {% block content %}
 <script src="{{ url_for('static', filename='js/realtime-dashboard.js') }}"></script>
@@ -6,7 +7,7 @@
     <div class="col-md-12">
         <div>
             <h2 style="font-weight: 700; color: var(--text-primary); letter-spacing: -0.02em;">
-                <i class="bi bi-speedometer2" style="color: var(--primary-color);"></i> Dashboard
+                <span style="color: var(--primary-color);">{{ icon('speedometer', 'me-1') }}</span> Dashboard
             </h2>
             <p class="text-muted mb-0 d-flex align-items-center" style="font-size: 0.875rem; letter-spacing: 0.02em;">
                 <span class="status-indicator online" aria-hidden="true"></span>
@@ -21,7 +22,7 @@
     <div class="col-md-3">
         <div class="stats-card stats-card-clickable text-center" role="button" tabindex="0"
              onclick="filterDevices('all')" aria-label="Show all devices in the table below">
-            <div class="stats-card-icon stats-card-icon-primary"><i class="bi bi-hdd-stack"></i></div>
+            <div class="stats-card-icon stats-card-icon-primary">{{ icon('stack') }}</div>
             <div class="card-title">Total Devices</div>
             <h2 id="total-devices">-</h2>
         </div>
@@ -53,7 +54,7 @@
     <div class="col-md-3">
         <div class="stats-card stats-card-clickable text-center" role="button" tabindex="0"
              onclick="location.href='/logs'" aria-label="View all logs">
-            <div class="stats-card-icon stats-card-icon-indigo"><i class="bi bi-journal-text"></i></div>
+            <div class="stats-card-icon stats-card-icon-indigo">{{ icon('journal') }}</div>
             <div class="card-title">Total Logs</div>
             <h2 id="total-logs">-</h2>
         </div>
@@ -61,7 +62,7 @@
     <div class="col-md-3">
         <div class="stats-card stats-card-clickable text-center text-danger" role="button" tabindex="0"
              onclick="filterDevices('error')" aria-label="Filter table to devices with errors">
-            <div class="stats-card-icon stats-card-icon-danger"><i class="bi bi-exclamation-triangle"></i></div>
+            <div class="stats-card-icon stats-card-icon-danger">{{ icon('warning') }}</div>
             <div class="card-title">Error Logs</div>
             <h2 id="error-logs">-</h2>
         </div>

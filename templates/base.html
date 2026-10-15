@@ -17,6 +17,7 @@
     <script src="{{ url_for('static', filename='js/loading.js') }}"></script>
 </head>
 <body class="liquid-glass-app">
+{% from "_icons.html" import icon %}
     <!-- Ambient Fluid Glass Refraction Orbs (Non-intrusive) -->
     <div class="liquid-ambient-canvas" aria-hidden="true">
         <div class="liquid-orb liquid-orb-1"></div>
@@ -31,7 +32,7 @@
             <!-- Brand & Identity -->
             <a href="/dashboard" class="nav-brand">
                 <div class="brand-icon-wrapper">
-                    <i class="bi bi-cpu-fill"></i>
+                    {{ icon('cpu') }}
                 </div>
                 <div class="brand-text">
                     <span class="brand-title">Evaratech</span>
@@ -44,25 +45,25 @@
                 <ul class="nav-menu" id="nav-links">
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}" href="/dashboard">
-                            <i class="bi bi-grid-fill"></i>
+                            {{ icon('grid') }}
                             <span>Dashboard</span>
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/logs' %}active{% endif %}" href="/logs">
-                            <i class="bi bi-journal-text"></i>
+                            {{ icon('journal') }}
                             <span>Logs</span>
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/add-device' %}active{% endif %}" href="/add-device">
-                            <i class="bi bi-plus-circle-fill"></i>
+                            {{ icon('plus-circle') }}
                             <span>Add Device</span>
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.path == '/settings' %}active{% endif %}" href="/settings">
-                            <i class="bi bi-gear-fill"></i>
+                            {{ icon('gear') }}
                             <span>Settings</span>
                         </a>
                     </li>
@@ -72,15 +73,15 @@
             <!-- Header Quick Actions & Controls (Strictly Icon-Only) -->
             <div class="nav-actions">
                 <button class="nav-icon-action-btn btn-mirror-refresh" onclick="refreshMirror(this)" title="Refresh Mirror">
-                    <i class="bi bi-cloud-download spin-icon"></i>
+                    {{ icon('cloud-download', 'spin-icon') }}
                 </button>
                 <button class="nav-icon-action-btn btn-sync-all" onclick="fetchAllDevices(this)" title="Sync All Devices">
-                    <i class="bi bi-arrow-repeat spin-icon"></i>
+                    {{ icon('sync', 'spin-icon') }}
                 </button>
-                
+
                 <!-- Mobile Navigation Toggle -->
                 <button class="nav-action-btn mobile-menu-toggle d-md-none ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#mobileNavDrawer" aria-controls="mobileNavDrawer" aria-expanded="false" aria-label="Toggle navigation">
-                    <i class="bi bi-list fs-5"></i>
+                    {{ icon('menu') }}
                 </button>
             </div>
         </div>
@@ -89,16 +90,16 @@
         <div class="collapse d-md-none mobile-nav-drawer" id="mobileNavDrawer">
             <div class="mobile-drawer-inner">
                 <a class="mobile-nav-link {% if request.path == '/dashboard' or request.path == '/' %}active{% endif %}" href="/dashboard">
-                    <i class="bi bi-grid-fill"></i> Dashboard
+                    {{ icon('grid') }} Dashboard
                 </a>
                 <a class="mobile-nav-link {% if request.path == '/logs' %}active{% endif %}" href="/logs">
-                    <i class="bi bi-journal-text"></i> Logs
+                    {{ icon('journal') }} Logs
                 </a>
                 <a class="mobile-nav-link {% if request.path == '/add-device' %}active{% endif %}" href="/add-device">
-                    <i class="bi bi-plus-circle-fill"></i> Add Device
+                    {{ icon('plus-circle') }} Add Device
                 </a>
                 <a class="mobile-nav-link {% if request.path == '/settings' %}active{% endif %}" href="/settings">
-                    <i class="bi bi-gear-fill"></i> Settings
+                    {{ icon('gear') }} Settings
                 </a>
             </div>
         </div>

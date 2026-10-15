@@ -1,0 +1,37 @@
+{#
+    Shared inline-SVG icon set — SF Symbols-style: 24x24 viewBox, 1.75px
+    stroke, round caps/joins, stroke="currentColor" so every icon inherits
+    whatever color/opacity its container already sets (same trick the
+    Bootstrap Icon glyphs got for free from `color: ...` on their parent).
+    Purely presentational — these replace <i class="bi ..."> glyphs 1:1
+    and carry no id/data attribute any JS depends on. Add new names here
+    as later pages get the same treatment; keep the viewBox/stroke
+    convention identical so every icon in the app reads as one family.
+#}
+{% macro icon(name, class="") %}
+{%- if name == "cpu" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 7V4M15 7V4M9 20v-3M15 20v-3M7 9H4M7 15H4M20 9h-3M20 15h-3"/></svg>
+{%- elif name == "grid" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+{%- elif name == "journal" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4.5h10.5A1.5 1.5 0 0 1 18 6v14l-3-2-3 2-3-2-3 2V6a1.5 1.5 0 0 1 1.5-1.5Z"/><path d="M8.5 9h5M8.5 12.5h5"/></svg>
+{%- elif name == "plus-circle" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.25"/><path d="M12 8.5v7M8.5 12h7"/></svg>
+{%- elif name == "gear" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.75"/><path d="M12 4.2v1.9M12 17.9v1.9M19.8 12h-1.9M6.1 12H4.2M17.4 6.6l-1.35 1.35M7.95 16.05 6.6 17.4M17.4 17.4l-1.35-1.35M7.95 7.95 6.6 6.6"/></svg>
+{%- elif name == "cloud-download" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17.5A4 4 0 0 1 7.6 9.6 5.25 5.25 0 0 1 17.9 9 3.75 3.75 0 0 1 17 16.5"/><path d="M12 10.5v7M9 15l3 3 3-3"/></svg>
+{%- elif name == "sync" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12a7.5 7.5 0 0 1 12.6-5.5M19.5 12a7.5 7.5 0 0 1-12.6 5.5"/><path d="M17 4v3.2h-3.2M7 20v-3.2h3.2"/></svg>
+{%- elif name == "menu" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+{%- elif name == "stack" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3.5 8 4.25-8 4.25-8-4.25Z"/><path d="m4 12 8 4.25L20 12M4 15.75 12 20l8-4.25"/></svg>
+{%- elif name == "warning" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5 21 19.5H3Z" stroke-linejoin="round"/><path d="M12 10.25v4M12 17v.01"/></svg>
+{%- elif name == "speedometer" -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15.5a8 8 0 1 1 16 0"/><path d="M12 15.5 15.5 10"/><path d="M12 15.5v.01"/></svg>
+{%- else -%}
+<svg class="icon-svg {{ class }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.25"/></svg>
+{%- endif -%}
+{% endmacro %}

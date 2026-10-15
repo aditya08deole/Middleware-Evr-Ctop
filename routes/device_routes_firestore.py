@@ -455,6 +455,10 @@ def delete_device(device_id):
                 f"Failed to delete device {device_id} from local mirror, but Firebase succeeded."
             )
 
+        from utils.memory_logger import memory_logger
+
+        memory_logger.clear_device(device_id)
+
         return jsonify({"success": True, "message": "Device deleted successfully"})
 
     except Exception as e:
@@ -600,18 +604,24 @@ def manual_fetch(device_id):
 @device_bp.route("/<device_id>/logs", methods=["GET"])
 @handle_errors
 def get_device_logs(device_id):
-    """Get logs for a specific device"""
+    """Get logs for a specific device.
+
+    Served entirely from the in-memory CTOP-send logger (zero Firestore
+    reads) — the Firestore "logs" collection is only ever written on
+    device-creation events, never per CTOP attempt, so querying it here
+    was a wasted read that could never return the per-attempt history
+    this endpoint is actually for.
+    """
     device = local_device_store.get_device_by_id(device_id)
 
     if not device:
         return jsonify({"success": False, "error": "Device not found"}), 404
 
     limit = request.args.get("limit", 50, type=int)
-    log_type = request.args.get("type")
 
-    logs = firestore_service.get_logs(
-        device_id=device_id, log_type=log_type, limit=limit
-    )
+    from utils.memory_logger import memory_logger
+
+    logs = memory_logger.get_logs(device_id=device_id, limit=limit)
 
     return jsonify({"success": True, "data": logs})
 
