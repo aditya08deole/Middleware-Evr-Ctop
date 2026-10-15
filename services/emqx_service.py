@@ -239,7 +239,8 @@ class EMQXService:
                     logger.debug(
                         f"[EMQX] Device {device_name} ({device_id}): "
                         f"Received message on '{msg.topic}' "
-                        f"(buffer size: {len(self._message_buffers.get(str(device_id), []))})"
+                        f"(buffer size: {len(self._message_buffers.get(str(device_id), []))}) "
+                        f"payload={payload}"
                     )
 
                     # Process instantly instead of waiting for the next scheduler
