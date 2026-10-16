@@ -33,27 +33,22 @@ All three live in the project root and are already packed inside the zip — not
 
 If any of these is missing on the server, the app either fails to start (`service-account-key.json`) or — for `encryption.key` — silently **generates a new one** on first boot, which makes any previously-encrypted device credentials unreadable. Always carry the existing files over; don't let the server generate fresh ones.
 
-### The five commands (on the server)
+### Two commands, on the server
 
 ```bash
-# 1. One-time only — install Docker (skip if already installed)
-curl -fsSL https://get.docker.com | sudo sh
+# 1. Unpack the zip
+unzip ctop-middleware-deploy.zip -d ctop-middleware && cd ctop-middleware
 
-# 2. Make the app directory and unpack the zip into it
-sudo mkdir -p /opt/ctop-middleware && cd /opt/ctop-middleware
-unzip ~/ctop-middleware-deploy.zip   # scp'd here beforehand — see Step 6 below
-
-# 3. Lock down the secret files
-chmod 600 .env service-account-key.json encryption.key
-
-# 4. Build and start (app + bundled nginx reverse proxy, port 80)
-docker-compose up -d --build
-
-# 5. Verify it's up
-curl http://localhost/health
+# 2. Run the one deploy script — handles everything else
+./scripts/quick-deploy.sh
 ```
 
-That's it — no manual `.env` editing, no Firebase console steps, no certbot, because the zip ships working credentials and `docker-compose.yml` already wires up gunicorn + an nginx reverse proxy on port 80. The app is now reachable at `http://<server-ip>/`.
+That script installs Docker if it's not already there, locks down the three
+secret files' permissions, builds the image, starts the app (+ bundled nginx
+reverse proxy on port 80), and checks it's actually responding. Nothing else
+to run and nothing to copy separately — the secrets already came in with
+the zip in step 1. The app is reachable at `http://<server-ip>/` once it
+prints "Deploy successful".
 
 **Only go further if you need:**
 - A real domain name + HTTPS → see [Step 11–14 below](#step-11-install-and-configure-nginx-reverse-proxy) (certbot)
@@ -1274,6 +1269,14 @@ docker cp ctop-middleware:/app/backup-*.tar.gz ~/backups/
 ---
 
 ## CI/CD Auto-Deploy Setup (One-Time)
+
+**Not what you need for a zip handoff to a team** — if you're giving someone
+a `ctop-middleware-deploy.zip` to extract and run, use [Quick Deploy
+(TL;DR)](#quick-deploy-tldr) at the top instead: the secrets travel inside
+that zip already, so there's no separate key-copy step. This section is a
+*different* setup, for when the server pulls its own updates straight from
+GitHub on every future push, instead of someone re-sending a new zip each
+time.
 
 Once this is set up, pushing a passing commit to `main` automatically redeploys
 the server — no manual SSH, no manual commands. Everything below only needs to
