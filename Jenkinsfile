@@ -8,16 +8,6 @@ pipeline {
 
     parameters {
         string(name: 'BACKEND_URL', defaultValue: 'http://localhost:8090', description: 'Production middleware URL used for the health check')
-        stashedFile(name: 'BACKEND_ENV_FILE', description: 'Upload the production .env file')
-        stashedFile(name: 'SERVICE_ACCOUNT_KEY_FILE', description: 'Upload the Firebase service-account-key.json file')
-        // The sibling Middleware-water-SPCRC pipeline this was modeled on
-        // never uploads this one. Without it, a fresh checkout has no
-        // encryption.key at all (it's gitignored) and the app silently
-        // generates a brand-new one on first boot -- which can't decrypt
-        // any device credential already stored under the real key. Upload
-        // the existing, working key here every time; never a freshly
-        // generated one.
-        stashedFile(name: 'ENCRYPTION_KEY_FILE', description: 'Upload the existing, working encryption.key (not a new one)')
     }
 
     stages {
@@ -47,36 +37,32 @@ pipeline {
 
         stage('Prepare Environment File') {
             steps {
-                sh 'rm -rf .jenkins-env .env service-account-key.json encryption.key && mkdir -p .jenkins-env/env .jenkins-env/firebase .jenkins-env/enckey'
-                dir('.jenkins-env/env') { unstash 'BACKEND_ENV_FILE' }
-                sh '''
-                    set -eux
-                    UPLOADED_ENV_FILE=$(find .jenkins-env/env -type f -print -quit)
-                    test -n "$UPLOADED_ENV_FILE"
-                    cp "$UPLOADED_ENV_FILE" .env
-                    chmod 600 .env
-                    test -f .env
-                '''
-
-                dir('.jenkins-env/firebase') { unstash 'SERVICE_ACCOUNT_KEY_FILE' }
-                sh '''
-                    set -eux
-                    UPLOADED_SERVICE_ACCOUNT_FILE=$(find .jenkins-env/firebase -type f -print -quit)
-                    test -n "$UPLOADED_SERVICE_ACCOUNT_FILE"
-                    cp "$UPLOADED_SERVICE_ACCOUNT_FILE" service-account-key.json
-                    chmod 600 service-account-key.json
-                    test -f service-account-key.json
-                '''
-
-                dir('.jenkins-env/enckey') { unstash 'ENCRYPTION_KEY_FILE' }
-                sh '''
-                    set -eux
-                    UPLOADED_ENCRYPTION_KEY_FILE=$(find .jenkins-env/enckey -type f -print -quit)
-                    test -n "$UPLOADED_ENCRYPTION_KEY_FILE"
-                    cp "$UPLOADED_ENCRYPTION_KEY_FILE" encryption.key
-                    chmod 600 encryption.key
-                    test -f encryption.key
-                '''
+                // All three secrets come from Jenkins' own Credentials
+                // store (Secret file type), registered ONCE by whoever has
+                // Jenkins admin access -- not re-uploaded per build. This
+                // is what makes every subsequent push fully hands-off: no
+                // one attaches a file to trigger a deploy, ever again.
+                // encryption.key MUST be the credential holding the real,
+                // existing key -- a freshly generated one can decrypt
+                // nothing already stored (see git history for the outage
+                // that caused once).
+                withCredentials([
+                    file(credentialsId: 'evara-env-file', variable: 'ENV_FILE'),
+                    file(credentialsId: 'evara-service-account-key', variable: 'SA_KEY_FILE'),
+                    file(credentialsId: 'evara-encryption-key', variable: 'ENCRYPTION_KEY_FILE')
+                ]) {
+                    sh '''
+                        set -eux
+                        rm -f .env service-account-key.json encryption.key
+                        cp "$ENV_FILE" .env
+                        cp "$SA_KEY_FILE" service-account-key.json
+                        cp "$ENCRYPTION_KEY_FILE" encryption.key
+                        chmod 600 .env service-account-key.json encryption.key
+                        test -f .env
+                        test -f service-account-key.json
+                        test -f encryption.key
+                    '''
+                }
             }
         }
 
