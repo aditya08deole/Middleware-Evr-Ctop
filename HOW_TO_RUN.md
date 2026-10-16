@@ -1308,6 +1308,17 @@ unless the server is rebuilt from scratch.
 
 ### Step 2: Place `encryption.key` on the server (once)
 
+**Which file, exactly:** the `encryption.key` already sitting in this repo's
+root folder on your local machine (next to `docker-compose.yml`) — this is
+the real, working key; it's what every device's stored credentials were
+actually encrypted with. Do not generate a new one and do not let the server
+generate its own — either of those produces a *different* key that can't
+decrypt anything already saved.
+
+**Where it goes:** the server, in the same folder as `docker-compose.yml`
+(e.g. `/opt/ctop-middleware/encryption.key`) — that exact path is what the
+volume mount below reads from.
+
 **Why this one step can't be scripted**: `encryption.key` is the single key
 that decrypts every device's stored ThingSpeak API key, CTOP auth token, and
 EMQX password. A script running *on* the server has no way to produce or
