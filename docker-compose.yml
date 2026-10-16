@@ -6,22 +6,27 @@ services:
     container_name: evara-middleware
     restart: always
     ports:
-      - "8080:8080"
+      - "8090:8090"
     env_file:
       - .env
     volumes:
       # Persistent storage for the SQLite mirror database
       - ./instance:/app/instance
+      # Credential encryption key MUST survive container rebuilds — without
+      # this mount, a rebuild gets a fresh container filesystem and
+      # utils/encryption.py silently generates a brand-new key, which can
+      # never decrypt any device credential encrypted under the old one.
+      - ./encryption.key:/app/encryption.key
       # Optional: mount service account key if not in the code folder
       # - ./service-account-key.json:/app/service-account-key.json
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   # Optional reverse proxy — additive, doesn't change how `middleware` is
-  # reached on :8080 above. Gives you gzip + a single place to terminate
+  # reached on :8090 above. Gives you gzip + a single place to terminate
   # TLS once you have real certificates (see nginx/nginx.conf). Not
   # required to run the app; omit this service entirely if you don't want it.
   nginx:

@@ -1,0 +1,23 @@
+name: Deploy
+
+# Fires after the CI workflow finishes on main. CI's "test" job is blocking
+# (see ci.yml) and determines the overall CI conclusion, so this only runs
+# when tests actually passed. deploy.sh then re-checks lint itself as a
+# hard gate before touching the running containers — belt and suspenders.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to production
+    if: github.event.workflow_run.conclusion == 'success'
+    # Runs on a self-hosted runner registered on the production server —
+    # that server is on a private network GitHub's own runners can't reach,
+    # so the runner has to live there and pull, not the other way around.
+    runs-on: [self-hosted, evara-middleware]
+    steps:
+      - name: Run deploy script
+        run: ./deploy.sh

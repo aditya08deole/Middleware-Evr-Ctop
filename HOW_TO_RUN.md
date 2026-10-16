@@ -11,8 +11,9 @@ Complete guide to running the system locally, with Docker, and deploying to prod
 2. [Docker Setup](#docker-setup)
 3. [Firebase Credentials Setup](#firebase-credentials-setup)
 4. [Server Deployment](#server-deployment)
-5. [Mirror File Feature](#mirror-file-feature)
-6. [Troubleshooting](#troubleshooting)
+5. [CI/CD Auto-Deploy Setup (One-Time)](#cicd-auto-deploy-setup-one-time)
+6. [Mirror File Feature](#mirror-file-feature)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -356,7 +357,7 @@ tail -f instance/app.log | grep "CTOP\|Device"
 - **Docker Desktop** installed ([Download](https://www.docker.com/products/docker-desktop))
 - **Docker Compose** installed (usually included with Docker Desktop)
 - **~2GB disk space** for Docker images
-- Port **8080** available
+- Port **8090** available
 
 **Verify installation**:
 ```bash
@@ -390,11 +391,11 @@ docker-compose up -d
 ```
 Creating ctop-middleware ... done
 Attaching to ctop-middleware
-* Running on http://0.0.0.0:8080
+* Running on http://0.0.0.0:8090
 ```
 
 **Time**: 30-60 seconds (first time includes image build)  
-**Ports exposed**: 8080
+**Ports exposed**: 8090
 
 ---
 
@@ -450,12 +451,12 @@ ctop-middleware    python app.py       Up 2 minutes (healthy)
 ### Docker: Access Dashboard
 
 ```bash
-http://localhost:8080
+http://localhost:8090
 ```
 
 **What it does**: Opens web interface running in container  
 **Why**: Same as local development, but in Docker  
-**Port**: 8080 (mapped from container's 8080)
+**Port**: 8090 (mapped from container's 8090)
 
 ---
 
@@ -809,7 +810,7 @@ Do this on your **local** machine (where the project currently lives) before upl
 
 ```bash
 # Windows PowerShell — find what's on the dev port
-netstat -ano | findstr :8080
+netstat -ano | findstr :8090
 Stop-Process -Id <pid> -Force
 
 # Docker, if it was running
@@ -983,7 +984,7 @@ docker-compose ps
 
 ### Step 11: Install and Configure nginx (Reverse Proxy)
 
-> **Which nginx should I use?** `docker-compose.yml` already ships an **optional `nginx` container** (config at `nginx/nginx.conf`) that proxies port 80 → the `middleware` container on 8080. That's the fastest path if you just want plain HTTP or you're terminating TLS somewhere else (e.g. a cloud load balancer). It does **not** currently have a 443/SSL block wired up.
+> **Which nginx should I use?** `docker-compose.yml` already ships an **optional `nginx` container** (config at `nginx/nginx.conf`) that proxies port 80 → the `middleware` container on 8090. That's the fastest path if you just want plain HTTP or you're terminating TLS somewhere else (e.g. a cloud load balancer). It does **not** currently have a 443/SSL block wired up.
 >
 > If you want **Let's Encrypt/certbot-managed HTTPS directly on this box** (the flow below), install nginx on the **host** instead and stop/remove the `nginx` service from `docker-compose.yml` first — two processes can't both bind port 80. Either approach works; don't run both at once.
 
@@ -1031,7 +1032,7 @@ server {
     
     # Proxy to Docker container
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:8090;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1050,7 +1051,7 @@ server {
 - Listens on port 80 (HTTP)
 - Listens on port 443 (HTTPS)
 - Redirects HTTP → HTTPS
-- Proxies requests to Docker container on 8080
+- Proxies requests to Docker container on 8090
 
 **Why**: 
 - HTTPS encryption for data
@@ -1172,7 +1173,7 @@ If you own parent domain (example.com):
 Not recommended but works for testing:
 
 ```
-https://your-server-ip:8080
+https://your-server-ip:8090
 ```
 
 **Issues**:
@@ -1269,6 +1270,75 @@ docker exec ctop-middleware tar czf /app/backup-$(date +%Y%m%d).tar.gz /app/inst
 # Copy to local
 docker cp ctop-middleware:/app/backup-*.tar.gz ~/backups/
 ```
+
+---
+
+## CI/CD Auto-Deploy Setup (One-Time)
+
+Once this is set up, pushing a passing commit to `main` automatically redeploys
+the server — no manual SSH, no manual commands. Everything below only needs to
+be done **once per server**; none of it repeats.
+
+### What gets automated vs. what can't be
+
+| Step | Automated by | Repeats? |
+|---|---|---|
+| Docker starts on boot | `scripts/server-setup.sh` | No — one time |
+| GitHub Actions runner install | `scripts/server-setup.sh` | No — one time |
+| Pull + lint + test + rebuild on every push | `deploy.yml` + `deploy.sh` | Yes — this is the ongoing automation |
+| Placing `encryption.key` on the server | Manual (see below) | No — one time, and only because it's a secret, see why below |
+
+### Step 1: Run the server setup script (once)
+
+On the production server:
+
+```bash
+# Get RUNNER_TOKEN from: GitHub repo → Settings → Actions → Runners →
+# New self-hosted runner (the token shown there expires in ~1 hour, so
+# generate it right before running this)
+RUNNER_TOKEN=<paste token> \
+REPO_URL=https://github.com/<org>/Middleware-Evr-CtoP \
+./scripts/server-setup.sh
+```
+
+This enables Docker on boot and installs the GitHub Actions runner as a
+system service labeled `evara-middleware` (matching `deploy.yml`). The
+runner now auto-starts on every reboot by itself — you never run this again
+unless the server is rebuilt from scratch.
+
+### Step 2: Place `encryption.key` on the server (once)
+
+**Why this one step can't be scripted**: `encryption.key` is the single key
+that decrypts every device's stored ThingSpeak API key, CTOP auth token, and
+EMQX password. A script running *on* the server has no way to produce or
+fetch a secret it doesn't already have — someone with the real key has to
+hand it over once. Putting the key in the git repo instead would defeat the
+entire reason the credentials are encrypted (anyone who can read the repo
+could then decrypt every device's secrets) — so this one step stays manual
+by design, not because it was too inconvenient to automate.
+
+The good news: **you only do this once, ever.** `docker-compose.yml` already
+mounts it as a persistent volume (`./encryption.key:/app/encryption.key`), so
+every future rebuild/redeploy reuses the same file automatically — it's not
+something `deploy.sh` or any redeploy ever needs to touch again.
+
+From your local machine, copy the key to the server's app directory (same
+folder as `docker-compose.yml`):
+
+```bash
+scp encryption.key user@your-server:/opt/ctop-middleware/encryption.key
+```
+
+(No SSH access? Paste the file's contents directly on the server instead:
+`nano encryption.key`, paste, save — then `chmod 600 encryption.key`.)
+
+### Step 3: Push to `main`
+
+That's it from here on. Every push to `main` that passes CI (`tests/` must
+pass; `deploy.sh` also re-checks lint as a hard gate) triggers
+`.github/workflows/deploy.yml`, which runs `deploy.sh` on the runner you just
+installed: pull latest → install deps → lint → test → rebuild → restart.
+A failing commit never touches the running containers.
 
 ---
 
@@ -1567,7 +1637,7 @@ docker-compose logs | grep "Device Separation"
 docker-compose logs | grep "Skipping duplicate"
 
 # Manually trigger sync
-curl -X POST http://localhost:8080/devices/1/fetch
+curl -X POST http://localhost:8090/devices/1/fetch
 ```
 
 ---
