@@ -11,9 +11,10 @@ Complete guide to running the system locally, with Docker, and deploying to prod
 2. [Docker Setup](#docker-setup)
 3. [Firebase Credentials Setup](#firebase-credentials-setup)
 4. [Server Deployment](#server-deployment)
-5. [CI/CD Auto-Deploy Setup (One-Time)](#cicd-auto-deploy-setup-one-time)
-6. [Mirror File Feature](#mirror-file-feature)
-7. [Troubleshooting](#troubleshooting)
+5. [CI/CD Auto-Deploy Setup — GitHub Actions (Not currently active)](#cicd-auto-deploy-setup--github-actions-not-currently-active)
+6. [Jenkins Pipeline Setup (Default)](#jenkins-pipeline-setup-default)
+7. [Mirror File Feature](#mirror-file-feature)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -1268,17 +1269,24 @@ docker cp ctop-middleware:/app/backup-*.tar.gz ~/backups/
 
 ---
 
-## CI/CD Auto-Deploy Setup (One-Time)
+## CI/CD Auto-Deploy Setup — GitHub Actions (Not currently active)
 
-**Not what you need for a zip handoff to a team** — if you're giving someone
-a `ctop-middleware-deploy.zip` to extract and run, use [Quick Deploy
+**Currently disabled in favor of Jenkins** — see [Jenkins Pipeline
+Setup](#jenkins-pipeline-setup-default) below, which is the active default
+auto-deploy path right now. `.github/workflows/deploy.yml` was removed so
+the two systems can't both try to deploy the same push at once. The setup
+below is kept for reference in case this project ever switches back; it
+still works, it's just not wired up to actually fire on push anymore.
+
+**Also not what you need for a zip handoff to a team** — if you're giving
+someone a `ctop-middleware-deploy.zip` to extract and run, use [Quick Deploy
 (TL;DR)](#quick-deploy-tldr) at the top instead: the secrets travel inside
 that zip already, so there's no separate key-copy step. This section is a
 *different* setup, for when the server pulls its own updates straight from
 GitHub on every future push, instead of someone re-sending a new zip each
 time.
 
-Once this is set up, pushing a passing commit to `main` automatically redeploys
+If this were active, pushing a passing commit to `main` would automatically redeploy
 the server — no manual SSH, no manual commands. Everything below only needs to
 be done **once per server**; none of it repeats.
 
@@ -1353,6 +1361,68 @@ pass; `deploy.sh` also re-checks lint as a hard gate) triggers
 `.github/workflows/deploy.yml`, which runs `deploy.sh` on the runner you just
 installed: pull latest → install deps → lint → test → rebuild → restart.
 A failing commit never touches the running containers.
+
+---
+
+## Jenkins Pipeline Setup (Default)
+
+**This is the active default auto-deploy path right now.** The `Jenkinsfile`
+at the repo root does the full lint → test → build → deploy → health-check
+cycle automatically on every push to `main`, running on Jenkins instead of
+the GitHub Actions setup above (which is currently disabled specifically so
+it can't double-deploy against the same server).
+
+### One-time Jenkins setup
+
+**1. Register the 3 secrets as Jenkins credentials (once, by a Jenkins admin)**
+
+Jenkins → Manage Jenkins → Credentials → add three entries, each of kind
+**"Secret file"**:
+
+| Credential ID | Upload this file |
+|---|---|
+| `evara-env-file` | `.env` |
+| `evara-service-account-key` | `service-account-key.json` |
+| `evara-encryption-key` | `encryption.key` — the real one, see the warning below |
+
+This is the improvement over a simpler "upload the file on every build"
+approach: once these three are registered, **no one ever uploads a file to
+trigger a deploy again** — the pipeline pulls them automatically every run.
+
+**`encryption.key` warning**: whichever file gets uploaded here is the one
+that decrypts every device's stored credentials from now on. Upload the
+existing, working key — not a freshly generated one. Uploading the wrong
+key here reproduces the exact outage this project's git history already
+fixed once, except now it's locked inside Jenkins' credential store instead
+of sitting in a project folder, which makes it harder to notice and fix.
+
+**2. Register the GitHub credential**
+
+Add a GitHub App or personal-access-token credential with ID
+`evara-middleware-github` (or update the `credentialsId` in `Jenkinsfile` to
+match whatever ID you actually use) with read access to this repo.
+
+**3. Set up the agent**
+
+The `Jenkinsfile` targets an agent labeled `evara-middleware-production`.
+Either label your production server's Jenkins agent that, or change the
+`agent { label '...' }` line to match an existing label — it just needs
+Docker and Docker Compose installed.
+
+**4. Create the Jenkins job**
+
+New Item → Pipeline → "Pipeline script from SCM" → point it at this repo's
+`main` branch and `Jenkinsfile`. Enable "GitHub hook trigger" (or poll SCM)
+so it fires automatically on push, matching the GitHub Actions setup above.
+
+### What the pipeline does on every push
+
+Checkout → pull the 3 secrets from Jenkins credentials → lint
+(`ruff`/`black`) + run the test suite inside a throwaway container → build →
+stop the old containers → start the new ones → poll `/health` for up to 90
+seconds, failing the build if the app never comes up healthy. A failing
+lint/test stage stops everything before the running production containers
+are ever touched.
 
 ---
 
