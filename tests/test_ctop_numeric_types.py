@@ -66,7 +66,9 @@ class TestCTOPNumericTypes(unittest.TestCase):
 
         for key, value in transformed.items():
             self.assertIsInstance(
-                value, float, f"{key}={value!r} must be a float, not {type(value).__name__}"
+                value,
+                float,
+                f"{key}={value!r} must be a float, not {type(value).__name__}",
             )
         self.assertEqual(transformed["temperature"], 20.0)
 

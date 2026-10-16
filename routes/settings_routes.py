@@ -28,6 +28,7 @@ def _slugify_host_id(name: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
     return slug or uuid.uuid4().hex[:8]
 
+
 # User accounts (profile/preferences/notifications/password) were removed
 # from this blueprint: they depended on a logged-in Firebase user, but the
 # dashboard's login page authenticates against a different Firebase project
@@ -56,7 +57,9 @@ def get_settings():
             "data": {
                 "scheduler": {
                     "interval_seconds": Config.SCHEDULER_INTERVAL_SECONDS,
-                    "interval_minutes": round(Config.SCHEDULER_INTERVAL_SECONDS / 60, 2),
+                    "interval_minutes": round(
+                        Config.SCHEDULER_INTERVAL_SECONDS / 60, 2
+                    ),
                 }
             },
         }
@@ -142,7 +145,9 @@ def get_ctop_hosts_route():
     if hosts is None:
         hosts = _DEFAULT_CTOP_HOSTS
         firestore_service.create_or_update_settings("ctop_hosts", {"hosts": hosts})
-    set_ctop_hosts(hosts)  # keep the live send-time cache in sync with what we just read
+    set_ctop_hosts(
+        hosts
+    )  # keep the live send-time cache in sync with what we just read
     return jsonify({"success": True, "data": {"hosts": hosts}})
 
 
@@ -163,7 +168,10 @@ def add_ctop_host():
     if not re.match(r"^https?://", base_url, re.IGNORECASE):
         return (
             jsonify(
-                {"success": False, "error": "base_url must start with http:// or https://"}
+                {
+                    "success": False,
+                    "error": "base_url must start with http:// or https://",
+                }
             ),
             400,
         )
@@ -237,12 +245,19 @@ def update_ctop_field_mapping():
     for device_type, fields in overrides.items():
         if device_type not in DEFAULT_CTOP_FIELD_MAP:
             return (
-                jsonify({"success": False, "error": f"Unknown device type: {device_type}"}),
+                jsonify(
+                    {"success": False, "error": f"Unknown device type: {device_type}"}
+                ),
                 400,
             )
         if not isinstance(fields, dict):
             return (
-                jsonify({"success": False, "error": f"Mapping for {device_type} must be an object"}),
+                jsonify(
+                    {
+                        "success": False,
+                        "error": f"Mapping for {device_type} must be an object",
+                    }
+                ),
                 400,
             )
         cleaned_fields = {}

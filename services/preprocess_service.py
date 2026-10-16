@@ -214,9 +214,7 @@ class PreprocessService:
         if not sample_feed:
             return
 
-        named_keys = sorted(
-            k for k in sample_feed if k not in _EMQX_FEED_METADATA_KEYS
-        )
+        named_keys = sorted(k for k in sample_feed if k not in _EMQX_FEED_METADATA_KEYS)
         if not named_keys:
             # Already in ThingSpeak-style field1..field8 format — fieldN
             # configuration is correct and expected here, nothing to warn.

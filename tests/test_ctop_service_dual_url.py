@@ -135,9 +135,7 @@ class TestCTOPDualURL(unittest.TestCase):
         with patch.object(
             self.service.session, "post", return_value=make_response(200)
         ) as mock_post:
-            result = self.service.send_to_ctop(
-                "dev1", device_data, payload={"x": 1}
-            )
+            result = self.service.send_to_ctop("dev1", device_data, payload={"x": 1})
 
         self.assertEqual(mock_post.call_count, 4)
         called_urls = {call.args[0] for call in mock_post.call_args_list}
@@ -168,9 +166,7 @@ class TestCTOPDualURL(unittest.TestCase):
         with patch.object(
             self.service.session, "post", return_value=make_response(200)
         ) as mock_post:
-            result = self.service.send_to_ctop(
-                "dev1", device_data, payload={"x": 1}
-            )
+            result = self.service.send_to_ctop("dev1", device_data, payload={"x": 1})
 
         self.assertEqual(mock_post.call_count, 2)  # only the two legacy URLs
         self.assertTrue(result["success"])
@@ -187,9 +183,7 @@ class TestCTOPDualURL(unittest.TestCase):
         with patch.object(
             self.service.session, "post", return_value=make_response(200)
         ) as mock_post:
-            result = self.service.send_to_ctop(
-                "dev1", device_data, payload={"x": 1}
-            )
+            result = self.service.send_to_ctop("dev1", device_data, payload={"x": 1})
 
         self.assertEqual(mock_post.call_count, 2)  # not 3
         self.assertTrue(result["success"])
@@ -220,7 +214,9 @@ class TestCTOPDualURL(unittest.TestCase):
         ) as mock_post:
             self.service.send_to_ctop("dev1", device_data, payload={"x": 1})
 
-        calls_by_url = {call.args[0]: call.kwargs["headers"] for call in mock_post.call_args_list}
+        calls_by_url = {
+            call.args[0]: call.kwargs["headers"] for call in mock_post.call_args_list
+        }
         self.assertEqual(
             calls_by_url["https://dev-ctop.example.com/node/52"]["Authorization"],
             "Bearer node-specific-token",
@@ -246,7 +242,9 @@ class TestCTOPDualURL(unittest.TestCase):
         ) as mock_post:
             self.service.send_to_ctop("dev1", device_data, payload={"x": 1})
 
-        calls_by_url = {call.args[0]: call.kwargs["headers"] for call in mock_post.call_args_list}
+        calls_by_url = {
+            call.args[0]: call.kwargs["headers"] for call in mock_post.call_args_list
+        }
         self.assertEqual(
             calls_by_url["https://dev-ctop.example.com/node/1"]["Authorization"],
             "Bearer tok-123",

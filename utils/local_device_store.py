@@ -297,9 +297,7 @@ class LocalDeviceStore:
                 # the scheduler but still show up to anything reading the
                 # SQLite mirror directly (e.g. device-count reports), out of
                 # sync with what the live app actually tracks.
-                removed_ids = set(self._devices.keys()) - {
-                    d.get("id") for d in devices
-                }
+                removed_ids = set(self._devices.keys()) - {d.get("id") for d in devices}
 
                 new_devices = {}
                 for device in devices:

@@ -54,7 +54,12 @@ class TestToggleDeviceEMQX(unittest.TestCase):
         self.addCleanup(self.local_update_patch.stop)
 
     def test_toggling_off_unsubscribes_emqx_device(self):
-        device = {"id": "dev1", "name": "Tank 1", "data_source": "emqx", "is_active": True}
+        device = {
+            "id": "dev1",
+            "name": "Tank 1",
+            "data_source": "emqx",
+            "is_active": True,
+        }
         mock_emqx = MagicMock()
 
         with patch.object(local_device_store, "get_device_by_id", return_value=device):
@@ -67,7 +72,12 @@ class TestToggleDeviceEMQX(unittest.TestCase):
         mock_emqx.subscribe_device.assert_not_called()
 
     def test_toggling_on_resubscribes_emqx_device(self):
-        device = {"id": "dev1", "name": "Tank 1", "data_source": "emqx", "is_active": False}
+        device = {
+            "id": "dev1",
+            "name": "Tank 1",
+            "data_source": "emqx",
+            "is_active": False,
+        }
         mock_emqx = MagicMock()
 
         with patch.object(local_device_store, "get_device_by_id", return_value=device):
@@ -83,7 +93,12 @@ class TestToggleDeviceEMQX(unittest.TestCase):
         self.assertTrue(called_device_arg["is_active"])
 
     def test_toggling_thingspeak_device_does_not_touch_emqx_service(self):
-        device = {"id": "dev1", "name": "Tank 1", "data_source": "thingspeak", "is_active": True}
+        device = {
+            "id": "dev1",
+            "name": "Tank 1",
+            "data_source": "thingspeak",
+            "is_active": True,
+        }
         mock_emqx = MagicMock()
 
         with patch.object(local_device_store, "get_device_by_id", return_value=device):

@@ -92,9 +92,7 @@ def test_permanent_4xx_failure_confirms_instead_of_rolling_back():
 
 
 def test_transient_5xx_failure_still_rolls_back():
-    mock_emqx = _run(
-        {"success": False, "error": "HTTP 503: Service Unavailable"}
-    )
+    mock_emqx = _run({"success": False, "error": "HTTP 503: Service Unavailable"})
 
     mock_emqx.rollback_fetch.assert_called_once_with("dev1")
     mock_emqx.confirm_consumed.assert_not_called()
@@ -103,9 +101,7 @@ def test_transient_5xx_failure_still_rolls_back():
 def test_rate_limited_429_still_rolls_back():
     # 429 is explicitly excluded from "permanent" — rate limiting is a
     # reason to slow down and retry, not drop the reading.
-    mock_emqx = _run(
-        {"success": False, "error": "HTTP 429: Too Many Requests"}
-    )
+    mock_emqx = _run({"success": False, "error": "HTTP 429: Too Many Requests"})
 
     mock_emqx.rollback_fetch.assert_called_once_with("dev1")
     mock_emqx.confirm_consumed.assert_not_called()

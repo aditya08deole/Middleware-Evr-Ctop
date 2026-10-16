@@ -242,20 +242,31 @@ def update_device(device_id):
     # latitude/longitude. Re-check each field, but only when it's actually
     # present in this request — a partial update still doesn't need to
     # resend fields it isn't touching.
-    if "ctop_url_1" in data and data["ctop_url_1"] and not is_valid_url(data["ctop_url_1"]):
+    if (
+        "ctop_url_1" in data
+        and data["ctop_url_1"]
+        and not is_valid_url(data["ctop_url_1"])
+    ):
         return jsonify({"success": False, "error": "Invalid ctop_url_1 format"}), 400
     if data.get("ctop_url_2") and not is_valid_url(data["ctop_url_2"]):
         return jsonify({"success": False, "error": "Invalid ctop_url_2 format"}), 400
     if "auth_token" in data and data["auth_token"] and len(str(data["auth_token"])) < 8:
         return (
-            jsonify({"success": False, "error": "Auth token must be at least 8 characters"}),
+            jsonify(
+                {"success": False, "error": "Auth token must be at least 8 characters"}
+            ),
             400,
         )
     if data.get("latitude") is not None:
         try:
             if not -90 <= float(data["latitude"]) <= 90:
                 return (
-                    jsonify({"success": False, "error": "Latitude must be between -90 and 90"}),
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Latitude must be between -90 and 90",
+                        }
+                    ),
                     400,
                 )
         except (ValueError, TypeError):
@@ -264,7 +275,12 @@ def update_device(device_id):
         try:
             if not -180 <= float(data["longitude"]) <= 180:
                 return (
-                    jsonify({"success": False, "error": "Longitude must be between -180 and 180"}),
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Longitude must be between -180 and 180",
+                        }
+                    ),
                     400,
                 )
         except (ValueError, TypeError):
@@ -277,13 +293,25 @@ def update_device(device_id):
     # not just on create. Checked against the merged state, not just the
     # incoming payload, since a partial update legitimately might not
     # touch any of these fields at all.
-    effective_data_source = data.get("data_source", device.get("data_source", "thingspeak"))
+    effective_data_source = data.get(
+        "data_source", device.get("data_source", "thingspeak")
+    )
     if effective_data_source == "emqx":
         merged = {**device, **data}
-        for field in ("emqx_broker_url", "emqx_topic", "emqx_username", "emqx_password"):
+        for field in (
+            "emqx_broker_url",
+            "emqx_topic",
+            "emqx_username",
+            "emqx_password",
+        ):
             if not merged.get(field):
                 return (
-                    jsonify({"success": False, "error": f"Missing required EMQX field: {field}"}),
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": f"Missing required EMQX field: {field}",
+                        }
+                    ),
                     400,
                 )
 
@@ -514,7 +542,9 @@ def _sync_device_data(device_id, device):
     # and would otherwise block this device from ever seeing new data again.
     if data_source != "emqx" and isinstance(raw_data, dict):
         try:
-            channel_last_entry_id = int(raw_data.get("channel", {}).get("last_entry_id") or 0)
+            channel_last_entry_id = int(
+                raw_data.get("channel", {}).get("last_entry_id") or 0
+            )
         except (ValueError, TypeError):
             channel_last_entry_id = 0
         try:
@@ -578,9 +608,7 @@ def _sync_device_data(device_id, device):
         local_device_store.update_device_fields(
             device_id, {"last_error": last_send_error}
         )
-    local_device_store.increment_device_stats(
-        device_id, send_success=success_count > 0
-    )
+    local_device_store.increment_device_stats(device_id, send_success=success_count > 0)
 
     if success_count == 0:
         return False, last_send_error or "CTOP rejected all payloads", results
@@ -671,7 +699,9 @@ def toggle_device(device_id):
             from utils.scheduler_firestore import emqx_service
 
             if new_status:
-                emqx_service.subscribe_device(device_id, {**device, "is_active": new_status})
+                emqx_service.subscribe_device(
+                    device_id, {**device, "is_active": new_status}
+                )
             else:
                 emqx_service.unsubscribe_device(device_id)
         except Exception as mqtt_err:

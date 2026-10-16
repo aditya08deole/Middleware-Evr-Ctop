@@ -91,7 +91,12 @@ def validate_device_data(f):
             # share one broker), but username/password/topic are always
             # device-specific — without them the device can never actually
             # connect, so these are enforced here too, not just in the UI.
-            emqx_required = ["emqx_broker_url", "emqx_topic", "emqx_username", "emqx_password"]
+            emqx_required = [
+                "emqx_broker_url",
+                "emqx_topic",
+                "emqx_username",
+                "emqx_password",
+            ]
             for field in emqx_required:
                 if field not in data or not data[field]:
                     return (
@@ -183,7 +188,9 @@ def validate_device_data(f):
             # Validate transport if provided (tcp = raw MQTT, websockets = MQTT
             # framed inside a WS/WSS connection -- the way through networks
             # that block 1883/8883 but allow 443).
-            if data.get("emqx_transport") is not None and data["emqx_transport"] not in (
+            if data.get("emqx_transport") is not None and data[
+                "emqx_transport"
+            ] not in (
                 "tcp",
                 "websockets",
             ):

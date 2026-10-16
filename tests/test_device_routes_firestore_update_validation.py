@@ -134,8 +134,12 @@ class TestUpdateDeviceValidation(unittest.TestCase):
             emqx_username="u",
             emqx_password="encrypted-pw",
         )
-        with patch.object(routes_mod.firestore_service, "get_device", return_value=emqx_device):
-            with patch.object(local_device_store, "get_device_by_id", return_value=emqx_device):
+        with patch.object(
+            routes_mod.firestore_service, "get_device", return_value=emqx_device
+        ):
+            with patch.object(
+                local_device_store, "get_device_by_id", return_value=emqx_device
+            ):
                 resp = self.client.put("/devices/dev1", json={"is_active": False})
         self.assertEqual(resp.status_code, 200)
 
@@ -148,12 +152,18 @@ class TestUpdateDeviceValidation(unittest.TestCase):
         device_with_two_targets = dict(
             BASE_DEVICE,
             ctop_targets=[
-                {"host_id": "dev", "node_path": "/node/1", "node_token": "encrypted-token-A"},
+                {
+                    "host_id": "dev",
+                    "node_path": "/node/1",
+                    "node_token": "encrypted-token-A",
+                },
                 {"host_id": "dev", "node_path": "/node/2"},  # no token
             ],
         )
         with patch.object(
-            routes_mod.firestore_service, "get_device", return_value=device_with_two_targets
+            routes_mod.firestore_service,
+            "get_device",
+            return_value=device_with_two_targets,
         ):
             # Re-save both targets with blank node_token fields (UI sends
             # no node_token when the user didn't type a new one).

@@ -104,9 +104,7 @@ def test_evaraflow_no_fabricated_meter_reading_before_any_real_one():
         },
     ]
 
-    processed = service._preprocess_evaraflow(
-        "test-device-flow-fresh", device, feeds
-    )
+    processed = service._preprocess_evaraflow("test-device-flow-fresh", device, feeds)
 
     assert len(processed) == 1
     assert "MeterReading" not in processed[0]

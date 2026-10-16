@@ -117,7 +117,9 @@ def create_app(config_name="default"):
         if mapping_doc.get("overrides"):
             set_ctop_field_map_overrides(mapping_doc["overrides"])
     except Exception as e:
-        logger.warning(f"Could not warm CTOP hosts/field-mapping caches at startup: {e}")
+        logger.warning(
+            f"Could not warm CTOP hosts/field-mapping caches at startup: {e}"
+        )
 
     # 2. Ensure device cache is warmed up
     from utils.device_cache import device_cache
@@ -171,7 +173,9 @@ def create_app(config_name="default"):
 
         device = local_device_store.get_device_by_id(device_id)
         if not device:
-            return render_template("add_device.html", device=None, edit_not_found=device_id)
+            return render_template(
+                "add_device.html", device=None, edit_not_found=device_id
+            )
 
         return render_template("add_device.html", device=device)
 

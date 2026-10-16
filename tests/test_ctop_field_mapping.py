@@ -44,8 +44,12 @@ class TestCTOPFieldMapping(unittest.TestCase):
         merged = get_ctop_field_map()
 
         self.assertEqual(merged["EvaraTank"]["Level"], "waterLevel")
-        self.assertEqual(merged["EvaraTank"]["Temperature"], "temperature")  # untouched default
-        self.assertEqual(merged["EvaraFlow"]["FlowRate"], "flow_rate")  # other type untouched
+        self.assertEqual(
+            merged["EvaraTank"]["Temperature"], "temperature"
+        )  # untouched default
+        self.assertEqual(
+            merged["EvaraFlow"]["FlowRate"], "flow_rate"
+        )  # other type untouched
 
     def test_transform_to_ctop_format_uses_overridden_key(self):
         set_ctop_field_map_overrides({"EvaraTank": {"Level": "waterLevel"}})
@@ -79,9 +83,7 @@ class TestCTOPFieldMapping(unittest.TestCase):
             "dev1", processed, device_data=device_data
         )
 
-        self.assertEqual(
-            transformed, [{"flow_rate": 1.2, "waterconsumption": 99.0}]
-        )
+        self.assertEqual(transformed, [{"flow_rate": 1.2, "waterconsumption": 99.0}])
 
     def test_default_map_covers_every_known_device_type(self):
         self.assertEqual(

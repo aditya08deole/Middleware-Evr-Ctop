@@ -51,8 +51,12 @@ def test_warns_once_when_fieldn_config_meets_named_key_payload(caplog):
     device_data = _emqx_device_data()
 
     with caplog.at_level(logging.WARNING):
-        service.preprocess_data("dev-ef-004", {"feeds": [_NAMED_KEY_FEED]}, device_data=device_data)
-        service.preprocess_data("dev-ef-004", {"feeds": [_NAMED_KEY_FEED]}, device_data=device_data)
+        service.preprocess_data(
+            "dev-ef-004", {"feeds": [_NAMED_KEY_FEED]}, device_data=device_data
+        )
+        service.preprocess_data(
+            "dev-ef-004", {"feeds": [_NAMED_KEY_FEED]}, device_data=device_data
+        )
 
     mapping_warnings = [
         r for r in caplog.records if "positional field-N names" in r.message
