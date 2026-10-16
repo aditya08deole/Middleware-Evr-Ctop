@@ -1372,57 +1372,56 @@ cycle automatically on every push to `main`, running on Jenkins instead of
 the GitHub Actions setup above (which is currently disabled specifically so
 it can't double-deploy against the same server).
 
+This `Jenkinsfile` deliberately mirrors the sibling `Middleware-water-SPCRC`
+project's already-working pipeline — same agent label
+(`scrc-main-production`), same GitHub credential ID
+(`SmartCityOrganisation-GitHubApp`), same per-build file-upload pattern — on
+the assumption it runs on that same Jenkins server. That means **no new
+Jenkins credentials or agent setup to configure** if that assumption holds;
+only one new thing needs creating.
+
 ### One-time Jenkins setup
 
-**1. Register the 3 secrets as Jenkins credentials (once, by a Jenkins admin)**
+**1. Create the Jenkins job** (the only required step, if the agent label
+and GitHub credential above already exist on your Jenkins server):
 
-Jenkins → Manage Jenkins → Credentials → add three entries, each of kind
-**"Secret file"**:
+New Item → Pipeline → "Pipeline script from SCM" → point it at
+`https://github.com/aditya08deole/Middleware-Evr-Ctop.git`, branch `main`,
+`Jenkinsfile`. Enable the GitHub push trigger so it fires automatically.
 
-| Credential ID | Upload this file |
+**2. If that agent label or GitHub credential ID *don't* already exist**
+on your Jenkins server (i.e. this is a different/separate Jenkins instance
+from the sibling project's), you'll need to either create them to match, or
+edit `agent { label '...' }` and `credentialsId: '...'` in `Jenkinsfile` to
+point at whatever does exist there.
+
+### What you upload on every build
+
+Unlike the GitHub Actions / Credentials-store approaches elsewhere in this
+doc, this version matches the sibling pipeline's pattern exactly: **every
+time someone triggers a build, they attach 3 files** as build parameters:
+
+| Parameter | Upload this file |
 |---|---|
-| `evara-env-file` | `.env` |
-| `evara-service-account-key` | `service-account-key.json` |
-| `evara-encryption-key` | `encryption.key` — the real one, see the warning below |
+| `BACKEND_ENV_FILE` | `.env` |
+| `SERVICE_ACCOUNT_KEY_FILE` | `service-account-key.json` |
+| `ENCRYPTION_KEY_FILE` | `encryption.key` — **the existing, working one**, never a freshly generated one |
 
-This is the improvement over a simpler "upload the file on every build"
-approach: once these three are registered, **no one ever uploads a file to
-trigger a deploy again** — the pipeline pulls them automatically every run.
-
-**`encryption.key` warning**: whichever file gets uploaded here is the one
-that decrypts every device's stored credentials from now on. Upload the
-existing, working key — not a freshly generated one. Uploading the wrong
-key here reproduces the exact outage this project's git history already
-fixed once, except now it's locked inside Jenkins' credential store instead
-of sitting in a project folder, which makes it harder to notice and fix.
-
-**2. Register the GitHub credential**
-
-Add a GitHub App or personal-access-token credential with ID
-`evara-middleware-github` (or update the `credentialsId` in `Jenkinsfile` to
-match whatever ID you actually use) with read access to this repo.
-
-**3. Set up the agent**
-
-The `Jenkinsfile` targets an agent labeled `evara-middleware-production`.
-Either label your production server's Jenkins agent that, or change the
-`agent { label '...' }` line to match an existing label — it just needs
-Docker and Docker Compose installed.
-
-**4. Create the Jenkins job**
-
-New Item → Pipeline → "Pipeline script from SCM" → point it at this repo's
-`main` branch and `Jenkinsfile`. Enable "GitHub hook trigger" (or poll SCM)
-so it fires automatically on push, matching the GitHub Actions setup above.
+That third upload is the one gap the sibling pipeline doesn't cover at all —
+without it, a fresh checkout has no `encryption.key` (it's gitignored) and
+the app would silently generate a new one on boot, reproducing the exact
+outage this project's git history already fixed once. If you'd rather not
+re-upload these on every build, see the GitHub Actions section above, which
+uses a persistent volume mount instead — pick whichever matches how your
+team actually works.
 
 ### What the pipeline does on every push
 
-Checkout → pull the 3 secrets from Jenkins credentials → lint
-(`ruff`/`black`) + run the test suite inside a throwaway container → build →
-stop the old containers → start the new ones → poll `/health` for up to 90
-seconds, failing the build if the app never comes up healthy. A failing
-lint/test stage stops everything before the running production containers
-are ever touched.
+Checkout → collect the 3 uploaded files → lint (`ruff`/`black`) + run the
+test suite inside a throwaway container → build → stop the old containers →
+start the new ones → poll `/health` for up to 90 seconds, failing the build
+if the app never comes up healthy. A failing lint/test stage stops
+everything before the running production containers are ever touched.
 
 ---
 

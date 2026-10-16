@@ -1,5 +1,5 @@
 pipeline {
-    agent { label 'evara-middleware-production' }
+    agent { label 'scrc-main-production' }
 
     options {
         timestamps()
@@ -8,6 +8,16 @@ pipeline {
 
     parameters {
         string(name: 'BACKEND_URL', defaultValue: 'http://localhost:8090', description: 'Production middleware URL used for the health check')
+        stashedFile(name: 'BACKEND_ENV_FILE', description: 'Upload the production .env file')
+        stashedFile(name: 'SERVICE_ACCOUNT_KEY_FILE', description: 'Upload the Firebase service-account-key.json file')
+        // The sibling Middleware-water-SPCRC pipeline this was modeled on
+        // never uploads this one. Without it, a fresh checkout has no
+        // encryption.key at all (it's gitignored) and the app silently
+        // generates a brand-new one on first boot -- which can't decrypt
+        // any device credential already stored under the real key. Upload
+        // the existing, working key here every time; never a freshly
+        // generated one.
+        stashedFile(name: 'ENCRYPTION_KEY_FILE', description: 'Upload the existing, working encryption.key (not a new one)')
     }
 
     stages {
@@ -18,7 +28,7 @@ pipeline {
                     branches: [[name: '*/main']],
                     userRemoteConfigs: [[
                         url: 'https://github.com/aditya08deole/Middleware-Evr-Ctop.git',
-                        credentialsId: 'evara-middleware-github'
+                        credentialsId: 'SmartCityOrganisation-GitHubApp'
                     ]]
                 ])
             }
@@ -35,40 +45,47 @@ pipeline {
             }
         }
 
-        stage('Prepare Secrets') {
+        stage('Prepare Environment File') {
             steps {
-                // All three come from Jenkins' own Credentials store (Secret
-                // file type), configured once by a Jenkins admin — not
-                // re-uploaded per build. See HOW_TO_RUN.md's "Jenkins
-                // Pipeline Setup" section for the one-time setup steps.
-                // encryption.key MUST be the credential holding the real
-                // working key — a different one can decrypt nothing already
-                // stored (see git history for the outage this caused once).
-                withCredentials([
-                    file(credentialsId: 'evara-env-file', variable: 'ENV_FILE'),
-                    file(credentialsId: 'evara-service-account-key', variable: 'SA_KEY_FILE'),
-                    file(credentialsId: 'evara-encryption-key', variable: 'ENCRYPTION_KEY_FILE')
-                ]) {
-                    sh '''
-                        set -eux
-                        cp "$ENV_FILE" .env
-                        cp "$SA_KEY_FILE" service-account-key.json
-                        cp "$ENCRYPTION_KEY_FILE" encryption.key
-                        chmod 600 .env service-account-key.json encryption.key
-                        test -f .env
-                        test -f service-account-key.json
-                        test -f encryption.key
-                    '''
-                }
+                sh 'rm -rf .jenkins-env .env service-account-key.json encryption.key && mkdir -p .jenkins-env/env .jenkins-env/firebase .jenkins-env/enckey'
+                dir('.jenkins-env/env') { unstash 'BACKEND_ENV_FILE' }
+                sh '''
+                    set -eux
+                    UPLOADED_ENV_FILE=$(find .jenkins-env/env -type f -print -quit)
+                    test -n "$UPLOADED_ENV_FILE"
+                    cp "$UPLOADED_ENV_FILE" .env
+                    chmod 600 .env
+                    test -f .env
+                '''
+
+                dir('.jenkins-env/firebase') { unstash 'SERVICE_ACCOUNT_KEY_FILE' }
+                sh '''
+                    set -eux
+                    UPLOADED_SERVICE_ACCOUNT_FILE=$(find .jenkins-env/firebase -type f -print -quit)
+                    test -n "$UPLOADED_SERVICE_ACCOUNT_FILE"
+                    cp "$UPLOADED_SERVICE_ACCOUNT_FILE" service-account-key.json
+                    chmod 600 service-account-key.json
+                    test -f service-account-key.json
+                '''
+
+                dir('.jenkins-env/enckey') { unstash 'ENCRYPTION_KEY_FILE' }
+                sh '''
+                    set -eux
+                    UPLOADED_ENCRYPTION_KEY_FILE=$(find .jenkins-env/enckey -type f -print -quit)
+                    test -n "$UPLOADED_ENCRYPTION_KEY_FILE"
+                    cp "$UPLOADED_ENCRYPTION_KEY_FILE" encryption.key
+                    chmod 600 encryption.key
+                    test -f encryption.key
+                '''
             }
         }
 
         stage('Lint & Test') {
             steps {
-                // Runs in a throwaway container, not on the agent's own
-                // Python — the agent only needs Docker, same as every other
-                // stage. A failure here stops the pipeline before Build/
-                // Deploy ever touch the running production containers.
+                // Runs in a throwaway container so the agent only ever
+                // needs Docker, same as every other stage. A failure here
+                // stops the pipeline before Build/Deploy touch the running
+                // production containers.
                 sh '''
                     set -eux
                     docker run --rm -v "$PWD":/app -w /app python:3.11-slim bash -c "
@@ -83,7 +100,7 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh 'set -eux; docker compose build'
+                sh 'set -eux; test -f .env; docker compose build'
             }
         }
 
