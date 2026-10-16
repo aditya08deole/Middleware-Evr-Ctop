@@ -506,6 +506,24 @@ def _sync_device_data(device_id, device):
 
     # Ensure we only send NEW entries to CTOP to prevent duplicates
     last_entry_id = str(device.get("last_processed_entry_id", ""))
+
+    # Sanity guard: mirrors utils/scheduler_firestore.py's process_device() —
+    # a channel's own last_entry_id can never be lower than what we've
+    # supposedly already processed. If it is, last_processed_entry_id was
+    # corrupted (e.g. cross-device overwrite) rather than genuinely ahead,
+    # and would otherwise block this device from ever seeing new data again.
+    if data_source != "emqx" and isinstance(raw_data, dict):
+        try:
+            channel_last_entry_id = int(raw_data.get("channel", {}).get("last_entry_id") or 0)
+        except (ValueError, TypeError):
+            channel_last_entry_id = 0
+        try:
+            stored_entry_id = int(last_entry_id) if last_entry_id else 0
+        except (ValueError, TypeError):
+            stored_entry_id = 0
+        if channel_last_entry_id and stored_entry_id > channel_last_entry_id:
+            last_entry_id = ""
+
     new_processed_data = []
     new_transformed_data = []
 

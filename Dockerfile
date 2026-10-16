@@ -33,7 +33,7 @@ COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Expose the port the app runs on
-EXPOSE 8080
+EXPOSE 8090
 
 # Use entrypoint script to initialize DB and start Gunicorn
 ENTRYPOINT ["/app/entrypoint.sh"]

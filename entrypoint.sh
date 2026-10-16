@@ -20,4 +20,4 @@ END
 
 # Start Gunicorn
 echo "Starting Gunicorn..."
-exec gunicorn --bind 0.0.0.0:8080 --workers 4 --timeout 120 --access-logfile - --error-logfile - app:app
+exec gunicorn --bind 0.0.0.0:8090 --workers 4 --timeout 120 --access-logfile - --error-logfile - app:app

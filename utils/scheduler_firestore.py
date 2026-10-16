@@ -322,6 +322,31 @@ def process_device(device_id, device_data):
         except (ValueError, TypeError):
             last_entry_id = 0
 
+        # Sanity guard: a channel's own last_entry_id (ThingSpeak's ground
+        # truth for the highest entry_id it has ever posted) can never be
+        # lower than what we've supposedly already processed. Seeing that
+        # is proof last_processed_entry_id was corrupted (e.g. overwritten
+        # with a different device's value in a prior race) rather than a
+        # real "already handled" state — left alone, it would permanently
+        # block this device from ever recognizing new data again. Self-heal
+        # by treating it as unset; Step 5 below persists the real entry_id
+        # once a reading is actually processed, correcting it for good.
+        if data_source != "emqx" and isinstance(raw_data, dict):
+            try:
+                channel_last_entry_id = int(
+                    raw_data.get("channel", {}).get("last_entry_id") or 0
+                )
+            except (ValueError, TypeError):
+                channel_last_entry_id = 0
+
+            if channel_last_entry_id and last_entry_id > channel_last_entry_id:
+                logger.warning(
+                    f"Device {device_id} has an impossible last_processed_entry_id "
+                    f"({last_entry_id}) above its channel's own highest entry_id "
+                    f"({channel_last_entry_id}) — treating as corrupted and resetting."
+                )
+                last_entry_id = 0
+
         new_processed_data = []
         new_transformed_data = []
 

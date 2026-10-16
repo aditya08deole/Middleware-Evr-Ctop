@@ -366,7 +366,7 @@ cp .env.example .env
 docker-compose up -d
 
 # 4. Access dashboard
-# http://localhost:8080
+# http://localhost:8090
 ```
 
 ### Local Development Setup
@@ -393,7 +393,7 @@ python app.py
 
 ```bash
 # Check system is running
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 # Should return: {"status": "healthy", ...}
 ```
 
@@ -1563,18 +1563,18 @@ docker build -t ctop-middleware:latest .
 # Run single container
 docker run -d \
   --name ctop-middleware \
-  -p 8080:8080 \
+  -p 8090:8090 \
   -v $(pwd)/instance:/app/instance \
   --env-file .env \
   --restart always \
-  --health-cmd="curl -f http://localhost:8080/health || exit 1" \
+  --health-cmd="curl -f http://localhost:8090/health || exit 1" \
   --health-interval=30s \
   ctop-middleware:latest
 
 # Parameters:
 # -d: Run in detached mode (background)
 # --name: Container name for reference
-# -p 8080:8080: Map port 8080 (host) to 8080 (container)
+# -p 8090:8090: Map port 8090 (host) to 8090 (container)
 # -v: Mount volume for persistent data
 # --env-file: Load environment variables
 # --restart: Restart policy (always = auto-recover)
@@ -1589,7 +1589,7 @@ docker ps
 docker logs -f ctop-middleware
 # -f: Follow mode (stream new logs)
 # Output:
-# * Running on http://0.0.0.0:8080
+# * Running on http://0.0.0.0:8090
 # * Starting scheduler...
 
 # Stop container
@@ -1614,7 +1614,7 @@ docker-compose up -d
 # Output:
 # Creating ctop-middleware ... done
 # Attaching to ctop-middleware
-# * Running on http://0.0.0.0:8080
+# * Running on http://0.0.0.0:8090
 
 # View logs
 docker-compose logs -f
@@ -1658,7 +1658,7 @@ services:
     container_name: ctop-middleware   # Container name
     
     ports:
-      - "8080:8080"                  # Port mapping: host:container
+      - "8090:8090"                  # Port mapping: host:container
     
     volumes:
       - ./instance:/app/instance      # Persistent volume
@@ -1673,7 +1673,7 @@ services:
     restart: always                   # Auto-restart on crash or reboot
     
     healthcheck:                      # Container health monitoring
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1797,7 +1797,7 @@ docker-compose logs --tail=50
 # Output: [recent 50 log lines]
 
 # Check health endpoint
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 # Output: {"status": "healthy", "timestamp": "2026-05-12T10:30:00Z"}
 ```
 
@@ -1829,7 +1829,7 @@ server {
     
     # Proxy to Docker container
     location / {
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:8090;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1849,7 +1849,7 @@ server {
     limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
     location /api/ {
         limit_req zone=api burst=20 nodelay;
-        proxy_pass http://localhost:8080;
+        proxy_pass http://localhost:8090;
     }
 }
 EOF
@@ -2028,8 +2028,8 @@ docker exec ctop-middleware find /app/instance -name "*.log" -mtime +30 -delete
 
 **Option 3: IP Address (temporary, not recommended)**
 ```
-1. Access via: https://your-server-ip:8080
-   Example: https://192.0.2.1:8080
+1. Access via: https://your-server-ip:8090
+   Example: https://192.0.2.1:8090
 
 2. Problems:
    - Self-signed certificate (browser warnings)
@@ -2202,7 +2202,7 @@ POST /api/test-connection
 
 ```bash
 # Create device
-curl -X POST http://localhost:8080/devices/ \
+curl -X POST http://localhost:8090/devices/ \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Tank B",
@@ -2217,16 +2217,16 @@ curl -X POST http://localhost:8080/devices/ \
   }'
 
 # Get device
-curl http://localhost:8080/devices/1
+curl http://localhost:8090/devices/1
 
 # Trigger sync
-curl -X POST http://localhost:8080/devices/1/fetch
+curl -X POST http://localhost:8090/devices/1/fetch
 
 # Get stats
-curl http://localhost:8080/data/stats
+curl http://localhost:8090/data/stats
 
 # Health check
-curl http://localhost:8080/health
+curl http://localhost:8090/health
 ```
 
 ---
@@ -2240,7 +2240,7 @@ curl http://localhost:8080/health
 Error: "Address already in use"
 
 Solution:
-1. Check port: lsof -i :8080 (Linux/Mac) or netstat -ano | findstr :8080 (Windows)
+1. Check port: lsof -i :8090 (Linux/Mac) or netstat -ano | findstr :8090 (Windows)
 2. Kill process: kill -9 <PID> (Linux/Mac) or taskkill /PID <PID> /F (Windows)
 3. Or change port in .env: PORT=8081
 
@@ -2255,8 +2255,8 @@ Problem: Scheduler not running
 Debug:
 1. Check scheduler in logs: grep -i scheduler docker-compose.logs
 2. Verify interval: Check SCHEDULER_INTERVAL_MINUTES in .env
-3. Check active devices: curl http://localhost:8080/devices/
-4. Test manual sync: curl -X POST http://localhost:8080/devices/1/fetch
+3. Check active devices: curl http://localhost:8090/devices/
+4. Test manual sync: curl -X POST http://localhost:8090/devices/1/fetch
 
 Fix:
 1. Restart scheduler: docker-compose restart
@@ -2275,7 +2275,7 @@ Possible causes:
 
 Debug:
 1. Test manually: curl "https://api.thingspeak.com/channels/YOUR_CHANNEL/feeds.json?api_key=YOUR_KEY&results=1"
-2. Check device config: curl http://localhost:8080/devices/1 | jq .channel_id
+2. Check device config: curl http://localhost:8090/devices/1 | jq .channel_id
 3. View logs: docker-compose logs | grep thingspeak
 ```
 
@@ -2291,9 +2291,9 @@ Possible causes:
 
 Debug:
 1. Test endpoint: curl -H "Authorization: Bearer token" https://ctop-endpoint/api
-2. Check device config: curl http://localhost:8080/devices/1 | jq .ctop_url_1
+2. Check device config: curl http://localhost:8090/devices/1 | jq .ctop_url_1
 3. View retry logs: docker-compose logs | grep "CTOP retry"
-4. Test connection: curl -X POST http://localhost:8080/api/test-connection -H "Content-Type: application/json" -d '{"device_id": 1}'
+4. Test connection: curl -X POST http://localhost:8090/api/test-connection -H "Content-Type: application/json" -d '{"device_id": 1}'
 ```
 
 **Issue: High memory usage**
@@ -2359,7 +2359,7 @@ python app.py
 docker-compose logs -f --tail=100
 
 # Test with verbose curl
-curl -v http://localhost:8080/devices/
+curl -v http://localhost:8090/devices/
 
 # Check database directly
 sqlite3 instance/ctop_iot.db
@@ -2444,7 +2444,7 @@ EXPLAIN QUERY PLAN SELECT * FROM logs WHERE device_id = 1 ORDER BY created_at DE
 docker build -t ctop-middleware:latest .
 
 # Run single
-docker run -d --name ctop-middleware -p 8080:8080 -v $(pwd)/instance:/app/instance --env-file .env --restart always ctop-middleware:latest
+docker run -d --name ctop-middleware -p 8090:8090 -v $(pwd)/instance:/app/instance --env-file .env --restart always ctop-middleware:latest
 
 # Compose
 docker-compose up -d                    # Start

@@ -58,7 +58,7 @@ def create_app(config_name="default"):
     # SECURITY: Update allowed origins for production
     # Default allows localhost for development
     allowed_origins = os.environ.get(
-        "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8080"
+        "ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8090"
     ).split(",")
 
     CORS(
@@ -579,7 +579,7 @@ if __name__ == "__main__":
     print(f"Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
     print(f"Scheduler Interval: {app.config['SCHEDULER_INTERVAL_SECONDS']} seconds")
     print("=" * 60)
-    print("Starting server on http://127.0.0.1:8080")
+    print("Starting server on http://127.0.0.1:8090")
     print("=" * 60)
 
     # Use 127.0.0.1 for development, 0.0.0.0 for production
@@ -589,4 +589,4 @@ if __name__ == "__main__":
     # processes means multiple schedulers race on the same SQLite mirror and
     # the same MQTT client_id at once. debug=True still gives the interactive
     # debugger; it just won't auto-restart the process anymore.
-    app.run(host=host, port=8080, debug=debug_mode, use_reloader=False)
+    app.run(host=host, port=8090, debug=debug_mode, use_reloader=False)
