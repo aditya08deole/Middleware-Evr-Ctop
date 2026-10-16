@@ -1385,8 +1385,25 @@ registered once and reused forever (see below).
 
 **1. Register the 3 secrets as Jenkins credentials (once)**
 
-Jenkins → Manage Jenkins → Credentials → add three entries, each of kind
-**"Secret file"**:
+Run `scripts/jenkins-register-secrets.sh` from the repo root (where `.env`,
+`service-account-key.json`, and `encryption.key` already are) — it registers
+all three in one shot via Jenkins' own API instead of filling out 3 separate
+UI forms:
+
+```bash
+JENKINS_URL=https://your-jenkins-server \
+JENKINS_USER=youruser \
+JENKINS_API_TOKEN=<generate at Jenkins → your user → Configure → API Token> \
+./scripts/jenkins-register-secrets.sh
+```
+
+Needs Overall/Administer permission on that Jenkins instance — same
+permission level manually adding credentials would require anyway. Your
+username/token only ever go from your own shell to your own Jenkins server;
+nothing else sees them.
+
+**Prefer the UI instead?** Jenkins → Manage Jenkins → Credentials → add
+three entries, each of kind **"Secret file"**:
 
 | Credential ID | Upload this file |
 |---|---|
@@ -1394,9 +1411,9 @@ Jenkins → Manage Jenkins → Credentials → add three entries, each of kind
 | `evara-service-account-key` | `service-account-key.json` |
 | `evara-encryption-key` | `encryption.key` — **the existing, working one**, never a freshly generated one |
 
-This is the step that makes it genuinely automated: once these three exist,
-**no one ever uploads a file to trigger a deploy again** — the pipeline
-pulls them automatically, every run, forever.
+Either way, this is the step that makes it genuinely automated: once these
+three exist, **no one ever uploads a file to trigger a deploy again** — the
+pipeline pulls them automatically, every run, forever.
 
 **`encryption.key` warning**: whichever file you upload here is the one
 that decrypts every device's stored credentials from that point on.
