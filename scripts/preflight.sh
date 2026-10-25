@@ -65,6 +65,60 @@ if [ -f encryption.key ] && [ -s encryption.key ]; then
     fi
 fi
 
+# --- 2b. encryption.key must be the SAME key as last time ---
+#
+# Length and presence are not enough. A freshly generated key is a perfectly
+# valid 44-character Fernet key, so every check above passes while it is
+# unable to decrypt a single stored credential — the loud, fixable "key is
+# missing" error silently becomes "key is fine" plus permanent data loss.
+# Several realistic paths lead there: the test suite generating one when the
+# file is absent, a half-finished restore, or Docker turning a missing bind
+# mount into an empty directory that somebody then "fixed" by making a new
+# key.
+#
+# So the first successful run records a fingerprint, and every later run
+# refuses to continue if it changes. Only a hash is stored, never the key.
+#
+# To accept a DELIBERATE key change (a real rotation, where you have already
+# re-encrypted or reissued every credential):
+#     rm .deploy-state/encryption-key.sha256
+KEY_FP_FILE=".deploy-state/encryption-key.sha256"
+if [ -f encryption.key ] && [ -s encryption.key ] && ! [ -d encryption.key ]; then
+    hash_cmd=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        hash_cmd="sha256sum"
+    elif command -v shasum >/dev/null 2>&1; then
+        hash_cmd="shasum -a 256"
+    fi
+
+    if [ -z "$hash_cmd" ]; then
+        warn "no sha256sum/shasum available — cannot verify the key is unchanged"
+    else
+        current_fp=$(tr -d '\n\r' < encryption.key | $hash_cmd | awk '{print $1}')
+        if [ -f "$KEY_FP_FILE" ]; then
+            recorded_fp=$(tr -d '\n\r' < "$KEY_FP_FILE")
+            if [ "$current_fp" = "$recorded_fp" ]; then
+                ok "encryption.key is the same key as previous deploys"
+            else
+                fail "encryption.key HAS CHANGED since the last deploy."
+                red  "        recorded: ${recorded_fp}"
+                red  "        current : ${current_fp}"
+                red  "        A different key cannot decrypt any credential already"
+                red  "        stored in Firestore. Restore the original before"
+                red  "        deploying — the newest backup has it:"
+                red  "          ls -t backups/ctop-backup-*.tar.gz | head -1"
+                red  "        If this change is intentional and every credential has"
+                red  "        been reissued, accept it with:"
+                red  "          rm ${KEY_FP_FILE}"
+            fi
+        else
+            mkdir -p "$(dirname "$KEY_FP_FILE")"
+            printf '%s' "$current_fp" > "$KEY_FP_FILE"
+            ok "recorded this encryption.key's fingerprint for future checks"
+        fi
+    fi
+fi
+
 # --- 3. service-account-key.json must be valid JSON with the expected shape ---
 #
 # Finding an interpreter is done by actually RUNNING it, not by `command -v`.

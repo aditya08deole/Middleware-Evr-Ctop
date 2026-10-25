@@ -60,10 +60,9 @@ Thumbs.db
 # Local runtime artifacts (dev server PID file)
 *.pid
 
-C:\Users\asus\AppData\Local\Temp\claude\C--Users-asus-OneDrive-Desktop-ctop-middleware-deploy\2d217425-8b42-4efb-afb6-f45e3d40740d\scratchpad\repo\encryption.key
-
 # Rollback marker / deploy state written by scripts/deploy.sh
 .deploy-state/
 
 # Local backup archives from scripts/backup.sh
 backups/
+

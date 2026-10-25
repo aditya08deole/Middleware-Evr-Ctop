@@ -10,9 +10,32 @@ compensation) exercise pure preprocessing/ORM logic and have no business
 touching any of that.
 """
 
-import pytest
-from flask import Flask
-from models import db
+import os
+import tempfile
+
+# Point the encryption service at a throwaway key file BEFORE any test
+# imports it. Without this, running the suite in a directory that has no
+# encryption.key makes utils/encryption.py generate one and write it to the
+# project root (it only refuses to do that when FLASK_ENV=production).
+#
+# That is genuinely dangerous in a deployment directory: a freshly generated
+# key is a VALID 44-character Fernet key, so it passes every "is the key
+# present and well-formed" check while being unable to decrypt a single
+# stored credential. It silently converts "the key is missing", which
+# scripts/preflight.sh is built to catch and block on, into "the key is
+# fine" — turning a loud, fixable error into permanent data loss.
+#
+# Set before the imports below, which is why these two lines sit above them
+# and E402 is suppressed for tests in pyproject.toml.
+os.environ.setdefault(
+    "ENCRYPTION_KEY_FILE_PATH",
+    os.path.join(tempfile.gettempdir(), "ctop-test-encryption.key"),
+)
+
+import pytest  # noqa: E402
+from flask import Flask  # noqa: E402
+
+from models import db  # noqa: E402
 
 
 @pytest.fixture

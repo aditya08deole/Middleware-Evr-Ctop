@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Start here — CTOP Middleware</title>
+<!--
+  This page is deliberately just instructions.
+
+  A page opened from a file cannot install Docker, write to /etc/systemd or
+  change a firewall: browsers keep local pages away from the operating
+  system on purpose. So this hands you the one command that starts the
+  real deployment tool, which then gives you the buttons.
+-->
+<style>
+  :root{
+    --bg:#0f1518; --panel:#161f23; --panel2:#1b262b; --line:#27353b;
+    --ink:#e6eef0; --dim:#93a6ac; --accent:#36b9a6; --accent-ink:#06211d;
+    --warn:#e0b355; --bad:#f08a76;
+    --mono:ui-monospace,Consolas,"Cascadia Mono",Menlo,monospace;
+    --sans:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f4f7f7; --panel:#fff; --panel2:#eaf0f0; --line:#d6e0e0;
+      --ink:#14201f; --dim:#5b6b6a; --accent:#0f6f63; --accent-ink:#fff;
+      --warn:#8a5e00; --bad:#a8321f;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+       line-height:1.6;padding:clamp(1rem,4vw,3rem)}
+  .wrap{max-width:46rem;margin:0 auto;display:flex;flex-direction:column;gap:1.5rem}
+  h1{margin:0;font-size:clamp(1.6rem,5vw,2.4rem);letter-spacing:-.02em}
+  .sub{color:var(--dim);margin:.35rem 0 0}
+  h2{font-size:1.05rem;margin:0 0 .5rem;display:flex;align-items:center;gap:.55rem}
+  .num{display:inline-flex;align-items:center;justify-content:center;
+       width:1.6rem;height:1.6rem;border-radius:50%;background:var(--accent);
+       color:var(--accent-ink);font-size:.85rem;font-weight:700;flex:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+        padding:1.1rem 1.2rem}
+  .cmd{display:flex;gap:.5rem;align-items:stretch;margin-top:.6rem}
+  .cmd code{flex:1;background:var(--panel2);border:1px solid var(--line);
+            border-radius:7px;padding:.7rem .8rem;font-family:var(--mono);
+            font-size:.9rem;overflow-x:auto;white-space:pre}
+  button{font-family:var(--sans);font-size:.88rem;font-weight:650;cursor:pointer;
+         border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);
+         padding:.6rem .9rem;border-radius:7px;white-space:nowrap}
+  button:hover{filter:brightness(1.08)}
+  button:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  p{margin:.5rem 0 0}
+  ul{margin:.5rem 0 0;padding-left:1.2rem}
+  li{margin:.2rem 0}
+  code.inline{background:var(--panel2);padding:.1em .4em;border-radius:4px;
+              font-family:var(--mono);font-size:.88em}
+  .note{border-left:3px solid var(--warn);background:var(--panel);
+        border-radius:0 8px 8px 0;padding:.9rem 1.1rem}
+  .danger{border-left:3px solid var(--bad);background:var(--panel);
+          border-radius:0 8px 8px 0;padding:.9rem 1.1rem}
+  .label{font-family:var(--mono);font-size:.68rem;letter-spacing:.14em;
+         text-transform:uppercase;color:var(--warn);font-weight:700}
+  .danger .label{color:var(--bad)}
+  footer{color:var(--dim);font-size:.85rem;border-top:1px solid var(--line);padding-top:1rem}
+  .ok{color:var(--accent);font-weight:650}
+</style>
+</head>
+<body><div class="wrap">
+
+<header>
+  <h1>Deploying the CTOP Middleware</h1>
+  <p class="sub">Three steps. Everything after step&nbsp;2 is clicking buttons.</p>
+</header>
+
+<div class="note">
+  <span class="label">Why this page has no Deploy button</span>
+  <p>A page opened from a file cannot install software or change system
+  settings — browsers block that on purpose, and it is a good thing they do.
+  So step&nbsp;2 starts a small tool <em>on the server</em> that has the
+  permissions, and that tool gives you the buttons.</p>
+</div>
+
+<div class="card">
+  <h2><span class="num">1</span> Put this folder on the server</h2>
+  <p>Copy the zip across, then unpack it:</p>
+  <div class="cmd">
+    <code id="c1">sudo mkdir -p /opt/ctop-middleware
+sudo chown $USER:$USER /opt/ctop-middleware
+unzip -o ~/ctop-middleware-*.zip -d /opt/ctop-middleware
+cd /opt/ctop-middleware
+chmod +x entrypoint.sh scripts/*.sh</code>
+    <button data-copy="c1">Copy</button>
+  </div>
+  <p><code class="inline">unzip -o</code> replaces the program files and
+  leaves your settings and database alone.</p>
+</div>
+
+<div class="card">
+  <h2><span class="num">2</span> Start the deployment tool</h2>
+  <div class="cmd">
+    <code id="c2">sudo python3 deploy-ui.py</code>
+    <button data-copy="c2">Copy</button>
+  </div>
+  <p>It prints a web link. Open that link and you will see
+  <span class="ok">Check the server</span>,
+  <span class="ok">Set up this server</span> and
+  <span class="ok">Deploy&nbsp;now</span> buttons, with the live output of
+  each step and the final address of the running app.</p>
+  <p>If the server has no desktop, run this on your own computer first, then
+  open the link there:</p>
+  <div class="cmd">
+    <code id="c3">ssh -L 8099:127.0.0.1:8099 YOUR_USER@YOUR_SERVER</code>
+    <button data-copy="c3">Copy</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2><span class="num">3</span> Press the buttons, in order</h2>
+  <ul>
+    <li><strong>Check the server</strong> — confirms the settings files are present. Changes nothing.</li>
+    <li><strong>Set up this server</strong> — first time only. Installs Docker, the firewall, restart-on-reboot, nightly backups and monitoring.</li>
+    <li><strong>Deploy now</strong> — builds and starts the app, waits for it to answer, and puts the previous version back by itself if the new one will not start.</li>
+  </ul>
+  <p>For later updates, only <strong>Deploy&nbsp;now</strong> is needed.</p>
+</div>
+
+<div class="danger">
+  <span class="label">About encryption.key — read once</span>
+  <p>Three files hold your settings and are <strong>not</strong> in the zip:
+  <code class="inline">.env</code>,
+  <code class="inline">service-account-key.json</code> and
+  <code class="inline">encryption.key</code>.</p>
+  <p>Copy them into the folder <strong>once</strong>, the very first time.
+  After that every future zip leaves them untouched, because they are not
+  inside the zip — so you never copy them again.</p>
+  <p><strong>encryption.key cannot be replaced.</strong> It is the key that
+  unlocks every device password already saved in the database. If it is lost
+  or swapped for a new one, none of them can ever be read again and every
+  device token has to be issued afresh. The tool records a fingerprint of it
+  and refuses to deploy if it ever changes.</p>
+</div>
+
+<footer>
+  Full reference: <code class="inline">DEPLOYMENT.md</code> in this folder.
+  Prefer the terminal? <code class="inline">make deploy</code>,
+  <code class="inline">make rollback</code>,
+  <code class="inline">make status</code>,
+  <code class="inline">make logs</code>.
+</footer>
+
+</div>
+<script>
+  document.querySelectorAll("button[data-copy]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var text = document.getElementById(btn.dataset.copy).textContent;
+      var done = function () {
+        var old = btn.textContent;
+        btn.textContent = "Copied";
+        setTimeout(function () { btn.textContent = old; }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { done(); });
+      } else {
+        // file:// pages without clipboard permission: select it instead so
+        // Ctrl+C still works rather than the button appearing broken.
+        var r = document.createRange();
+        r.selectNodeContents(document.getElementById(btn.dataset.copy));
+        var s = window.getSelection();
+        s.removeAllRanges();
+        s.addRange(r);
+        done();
+      }
+    });
+  });
+</script>
+</body>
+</html>

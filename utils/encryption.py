@@ -27,6 +27,42 @@ class EncryptionService:
         key = self._get_or_create_key()
         self._cipher = Fernet(key)
 
+    @staticmethod
+    def _coerce_fernet_key(raw: str) -> bytes:
+        """Turn whatever ENCRYPTION_KEY contains into bytes Fernet accepts.
+
+        A Fernet key IS urlsafe-base64 text, so the normal case is to pass it
+        straight through. Shell variables pick up stray whitespace and quotes
+        easily, and a value that has been base64-encoded a second time by a
+        secret store is a realistic mistake, so both are tolerated rather
+        than failing with Fernet's opaque message.
+        """
+        candidate = raw.strip().strip("'\"").encode()
+
+        try:
+            Fernet(candidate)
+            return candidate
+        except Exception:
+            pass
+
+        # Maybe it is the 32 raw key bytes, themselves base64-encoded again.
+        try:
+            decoded = base64.urlsafe_b64decode(candidate)
+            if len(decoded) == 32:
+                reencoded = base64.urlsafe_b64encode(decoded)
+                Fernet(reencoded)
+                return reencoded
+        except Exception:
+            pass
+
+        raise ValueError(
+            "ENCRYPTION_KEY is not a valid Fernet key. It must be 44 "
+            "url-safe base64 characters, exactly as found in encryption.key. "
+            'Generate one with: python -c "from cryptography.fernet import '
+            'Fernet; print(Fernet.generate_key().decode())"  — but note that a '
+            "NEW key cannot decrypt credentials stored under the old one."
+        )
+
     def _get_or_create_key(self) -> bytes:
         """Get existing encryption key or create new one"""
         # Use absolute path for key file to ensure consistency
@@ -34,15 +70,26 @@ class EncryptionService:
         default_key_path = os.path.join(base_dir, "encryption.key")
         key_path = os.environ.get("ENCRYPTION_KEY_FILE_PATH", default_key_path)
 
-        # Check for key in environment variable first
+        # Check for key in environment variable first.
+        #
+        # This path used to be unusable. It did:
+        #     return base64.urlsafe_b64decode(env_key.encode())
+        # which turns a real Fernet key (44 urlsafe-base64 characters) into 32
+        # RAW bytes — and Fernet() then rejects that with "Fernet key must be
+        # 32 url-safe base64-encoded bytes." So setting ENCRYPTION_KEY crashed
+        # the app at startup, every time. That matters because this is the
+        # documented production route: the error raised further down says
+        # "ENCRYPTION_KEY environment variable must be set in production",
+        # i.e. anyone following that instruction hit a hard failure. Only the
+        # key-FILE path ever worked, which is why it went unnoticed.
         env_key = os.environ.get("ENCRYPTION_KEY")
         if env_key:
-            return base64.urlsafe_b64decode(env_key.encode())
+            return self._coerce_fernet_key(env_key)
 
         # Check for key file
         if os.path.exists(key_path):
             with open(key_path, "rb") as f:
-                return f.read()
+                return f.read().strip()
 
         # SECURITY: mirror config.py's SECRET_KEY requirement — refuse to
         # silently generate (and write unencrypted to disk) a brand-new
@@ -77,21 +124,43 @@ class EncryptionService:
         return key
 
     def _add_to_gitignore(self, filepath: str):
-        """Add file to .gitignore if not present"""
+        """Make sure a generated key file is ignored by git.
+
+        Writes a path RELATIVE to the repository, and only for a key that
+        actually lives inside it. Previously this appended the absolute
+        path it was handed, which meant lines like
+
+            C:\\Users\\someone\\AppData\\Local\\Temp\\...\\encryption.key
+
+        were added to the committed .gitignore — machine-specific, useless
+        to anyone else, and they really did get committed. A key written
+        outside the repository (ENCRYPTION_KEY_FILE_PATH pointing at /tmp,
+        which is what the test suite does) needs no gitignore entry at all,
+        so nothing is written in that case.
+        """
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         gitignore_path = os.path.join(base_dir, ".gitignore")
 
+        try:
+            rel = os.path.relpath(os.path.abspath(filepath), base_dir)
+        except ValueError:
+            # Different drive on Windows — definitively outside the repo.
+            return
+        if rel.startswith(os.pardir) or os.path.isabs(rel):
+            return
+        entry = rel.replace(os.sep, "/")
+
         if not os.path.exists(gitignore_path):
-            with open(gitignore_path, "w") as f:
-                f.write(f"{filepath}\n")
+            with open(gitignore_path, "w", encoding="utf-8") as f:
+                f.write(f"{entry}\n")
             return
 
-        with open(gitignore_path, "r") as f:
+        with open(gitignore_path, "r", encoding="utf-8") as f:
             content = f.read()
 
-        if filepath not in content:
-            with open(gitignore_path, "a") as f:
-                f.write(f"\n{filepath}\n")
+        if entry not in content.split():
+            with open(gitignore_path, "a", encoding="utf-8") as f:
+                f.write(f"\n{entry}\n")
 
     def encrypt(self, data: str) -> str:
         """

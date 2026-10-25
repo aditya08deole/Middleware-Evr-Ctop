@@ -15,7 +15,7 @@ HEALTH_TIMEOUT := 120
 
 .DEFAULT_GOAL := help
 .PHONY: help preflight build up down restart dev logs status health test lint fmt fmt-check audit shell ps \
-        deploy rollback rollback-list backup watchdog bootstrap
+        deploy rollback rollback-list backup watchdog bootstrap ui
 
 help: ## Show this help
 	@echo "CTOP middleware — available targets:"
@@ -24,6 +24,11 @@ help: ## Show this help
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo
 	@echo "Deploy:  make deploy   Revert:  make rollback   Dev:  make dev"
+
+# --- Point-and-click ------------------------------------------------------
+ui: ## Open the browser deployment UI (buttons instead of commands)
+	@echo "Starting the deployment UI. Use sudo if you still need 'Set up this server'."
+	@python3 deploy-ui.py
 
 # --- Phase 5: deploy and revert -------------------------------------------
 deploy: ## Build, start and verify health; auto-rolls back if unhealthy
