@@ -1,0 +1,22 @@
+# Alerts when the pipeline stops delivering to CTOP.
+#
+# This exists because of a real incident: CTOP's database returned 503 for
+# roughly twelve hours and nothing anywhere raised a flag. The app was
+# healthy, the containers were up, the host was fine — and not one reading
+# was getting through. Container health checks cannot catch that, because
+# the service genuinely IS healthy; it is the far end that is broken.
+
+[Unit]
+Description=CTOP middleware delivery watchdog
+Documentation=file://__DEPLOY_DIR__/DEPLOYMENT.md
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__DEPLOY_DIR__
+User=__RUN_USER__
+Group=__RUN_USER__
+# .env supplies WATCHDOG_WEBHOOK_URL and the thresholds, if set.
+EnvironmentFile=-__DEPLOY_DIR__/.env
+ExecStart=/usr/bin/env bash scripts/watchdog.sh
+TimeoutStartSec=120

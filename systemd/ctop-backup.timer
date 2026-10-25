@@ -1,0 +1,16 @@
+[Unit]
+Description=Run the CTOP middleware backup nightly
+Documentation=file://__DEPLOY_DIR__/DEPLOYMENT.md
+
+[Timer]
+# 02:30 local time, with jitter so a fleet of servers does not all wake at
+# the same instant.
+OnCalendar=*-*-* 02:30:00
+RandomizedDelaySec=15m
+# If the machine was asleep or powered off at 02:30, run on the next boot
+# instead of silently skipping the night.
+Persistent=true
+Unit=ctop-backup.service
+
+[Install]
+WantedBy=timers.target

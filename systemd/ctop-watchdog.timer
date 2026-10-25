@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the CTOP delivery watchdog every 15 minutes
+Documentation=file://__DEPLOY_DIR__/DEPLOYMENT.md
+
+[Timer]
+# First run 10 minutes after boot, so a cold start's Firebase sync and MQTT
+# subscriptions have settled before the first judgement is made.
+OnBootSec=10min
+OnUnitActiveSec=15min
+RandomizedDelaySec=2m
+Unit=ctop-watchdog.service
+
+[Install]
+WantedBy=timers.target

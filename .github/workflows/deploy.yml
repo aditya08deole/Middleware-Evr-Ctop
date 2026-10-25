@@ -1,0 +1,148 @@
+name: Deploy
+
+# THIS IS THE FILE THAT WAS MISSING.
+#
+# The old scripts/server-setup.sh installed a self-hosted runner labelled
+# "evara-middleware" and told the operator that pushes to main would deploy
+# themselves. That was never true: this workflow did not exist, so the
+# runner sat idle waiting for a job that could never be queued. Anyone who
+# followed the setup guide believed they had continuous deployment and had
+# nothing.
+#
+# PREREQUISITES on the server (one time):
+#   1. Clone this repository to the deployment directory and put the three
+#      secret files in it:
+#        sudo mkdir -p /opt/ctop-middleware
+#        sudo chown $USER:$USER /opt/ctop-middleware
+#        git clone <repo> /opt/ctop-middleware
+#        scp .env encryption.key service-account-key.json <server>:/opt/ctop-middleware/
+#   2. Run the bootstrap, which installs Docker, the firewall, the systemd
+#      units, backups, the watchdog, and the CI runner:
+#        cd /opt/ctop-middleware
+#        RUNNER_TOKEN=<token> REPO_URL=<repo-url> \
+#          sudo ./scripts/bootstrap-ubuntu.sh --with-runner
+#      The token comes from repo Settings > Actions > Runners > New
+#      self-hosted runner, and expires in about an hour.
+#   3. Set the DEPLOY_DIR repository variable to the deployment directory
+#      (Settings > Secrets and variables > Actions > Variables). Defaults to
+#      /opt/ctop-middleware if unset.
+#
+# See DEPLOYMENT.md for the full walkthrough.
+#
+# Why a separate directory instead of the runner's workspace: the runner
+# checks out into a fresh _work directory on every run, which does not and
+# must not contain .env, encryption.key or the instance/ SQLite mirror.
+# Deploying from a persistent directory keeps credentials and local state in
+# exactly one place that CI never overwrites.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two deploys at once against the same server, and never cancel a
+# deploy half-way through — an interrupted `compose up` can leave the stack
+# partially started.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # Re-run the full quality gate rather than trusting that CI already
+  # passed. A workflow triggered by `push` cannot depend on a job in
+  # another workflow file, and "it probably passed" is not a gate.
+  verify:
+    name: Verify before deploying
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - run: ruff check .
+      - run: black --check .
+      # python -m pytest, not bare pytest -- see the note in ci.yml.
+      - run: python -m pytest
+
+  deploy:
+    name: Deploy to production
+    needs: verify
+    runs-on: [self-hosted, evara-middleware]
+    environment: production
+    env:
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/ctop-middleware' }}
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Check the deployment directory is set up
+        run: |
+          set -euo pipefail
+          if [ ! -d "$DEPLOY_DIR/.git" ]; then
+            echo "::error::$DEPLOY_DIR is not a git clone of this repository."
+            echo "See the PREREQUISITES comment at the top of this workflow."
+            exit 1
+          fi
+
+      - name: Fetch this exact commit
+        run: |
+          set -euo pipefail
+          cd "$DEPLOY_DIR"
+          git fetch --prune origin
+          # Deploy the commit that triggered this run, not whatever main
+          # points at by the time the job starts.
+          git checkout --detach "${{ github.sha }}"
+          git reset --hard "${{ github.sha }}"
+          # Remove stale build artefacts but NEVER the untracked secrets or
+          # the SQLite mirror: -x would delete .env, encryption.key,
+          # service-account-key.json and instance/. Hence plain -fd with
+          # explicit excludes.
+          git clean -fd \
+            -e .env \
+            -e encryption.key \
+            -e service-account-key.json \
+            -e instance
+
+      # scripts/deploy.sh does the whole sequence: preflight, record the
+      # running tag, build a SHA-tagged image, start it, wait for /health,
+      # and — if it does not come up — put the previous image back by itself
+      # and report failure. Keeping that logic in the script rather than in
+      # workflow steps means an operator on the server runs exactly the same
+      # deploy path as CI does, so a problem reproduces identically.
+      #
+      # Tests already ran in the `verify` job above, so they are skipped here
+      # rather than run a third time on the server.
+      - name: Deploy (health-gated, auto-rollback)
+        run: |
+          cd "$DEPLOY_DIR"
+          bash scripts/deploy.sh --skip-tests
+
+      - name: Report state
+        if: always()
+        run: |
+          cd "$DEPLOY_DIR"
+          docker compose ps || true
+          if [ -s .deploy-state/current-tag ]; then
+            echo "Running tag: $(cat .deploy-state/current-tag)"
+          fi
+
+      - name: Explain a failure
+        if: failure()
+        run: |
+          cd "$DEPLOY_DIR"
+          echo "::error::Deploy of ${{ github.sha }} failed."
+          if [ -s .deploy-state/current-tag ]; then
+            running="$(cat .deploy-state/current-tag)"
+            if [ "$running" != "${{ github.sha }}" ] && \
+               [ "${running}" != "$(git rev-parse --short=12 ${{ github.sha }})" ]; then
+              echo "::warning::Automatically rolled back — the service is up on ${running}."
+            else
+              echo "::error::The service may be DOWN. Check the logs below."
+            fi
+          fi
+          docker compose logs --tail=120 middleware || true

@@ -1,0 +1,46 @@
+# Boot ordering and a single place to check the stack's state.
+#
+# docker-compose.yml already sets `restart: unless-stopped`, which restarts
+# individual containers that crash. This unit does something different: it
+# makes the whole stack a first-class system service, so it starts in the
+# right order after a reboot (specifically AFTER docker.service and after the
+# network is actually up, not merely configured), it runs the preflight check
+# before anything starts, and `systemctl status ctop-middleware` plus
+# `journalctl -u ctop-middleware` become the one place to look.
+#
+# __DEPLOY_DIR__ and __RUN_USER__ are substituted by
+# scripts/bootstrap-ubuntu.sh when it installs this file.
+
+[Unit]
+Description=CTOP IoT Middleware (Docker Compose stack)
+Documentation=file://__DEPLOY_DIR__/DEPLOYMENT.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__DEPLOY_DIR__
+User=__RUN_USER__
+Group=__RUN_USER__
+
+# Refuse to start if a secret is missing, empty, or has been turned into a
+# directory by Docker. Without this gate a boot with a missing
+# encryption.key starts the app, which generates a new key and permanently
+# orphans every credential in Firestore.
+ExecStartPre=/usr/bin/env bash scripts/preflight.sh
+
+ExecStart=/usr/bin/docker compose up -d --remove-orphans
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose up -d --remove-orphans
+
+# A cold start pulls the device list from Firebase and opens one MQTT
+# subscription per EMQX device; the default 90s is not always enough.
+TimeoutStartSec=300
+# Mirrors stop_grace_period in docker-compose.yml, so gunicorn can finish
+# in-flight CTOP posts and release the scheduler lock cleanly.
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

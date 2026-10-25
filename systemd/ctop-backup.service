@@ -1,0 +1,22 @@
+# Nightly backup of the two things that cannot be rebuilt from source:
+# encryption.key and the SQLite device mirror. Triggered by
+# ctop-backup.timer, not enabled directly.
+#
+# Losing encryption.key is unrecoverable by any amount of engineering —
+# every device credential in Firestore is encrypted with it, so a fresh key
+# means reissuing all node tokens from the CTOP team.
+
+[Unit]
+Description=CTOP middleware nightly backup
+Documentation=file://__DEPLOY_DIR__/DEPLOYMENT.md
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__DEPLOY_DIR__
+User=__RUN_USER__
+Group=__RUN_USER__
+ExecStart=/usr/bin/env bash scripts/backup.sh
+# Backups are best-effort: a failure here must never be able to stop or
+# degrade the running service.
+TimeoutStartSec=600

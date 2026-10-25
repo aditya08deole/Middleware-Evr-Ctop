@@ -11,53 +11,50 @@ Complete guide to running the system locally, with Docker, and deploying to prod
 2. [Docker Setup](#docker-setup)
 3. [Firebase Credentials Setup](#firebase-credentials-setup)
 4. [Server Deployment](#server-deployment)
-5. [CI/CD Auto-Deploy Setup — GitHub Actions (Not currently active)](#cicd-auto-deploy-setup--github-actions-not-currently-active)
-6. [Jenkins Pipeline Setup (Default)](#jenkins-pipeline-setup-default)
-7. [Mirror File Feature](#mirror-file-feature)
-8. [Troubleshooting](#troubleshooting)
+5. [CI/CD Auto-Deploy Setup — GitHub Actions](#cicd-auto-deploy-setup--github-actions)
+6. [Mirror File Feature](#mirror-file-feature)
+7. [Troubleshooting](#troubleshooting)
 
 ---
-
 ## Quick Deploy (TL;DR)
 
-The `ctop-middleware-deploy.zip` built for this project already contains the app code **and** its three secret files, so a fresh server needs almost nothing — just Docker and five commands.
+Deployment is documented in full in **[DEPLOYMENT.md](DEPLOYMENT.md)**, which
+is the single source of truth. The short version:
+
+```bash
+# One time, on a fresh Ubuntu 22.04 / 24.04 server
+git clone <repo-url> /opt/ctop-middleware
+scp .env encryption.key service-account-key.json <server>:/opt/ctop-middleware/
+cd /opt/ctop-middleware && sudo ./scripts/bootstrap-ubuntu.sh
+
+# Every deploy after that
+make deploy      # health-gated; rolls back by itself if the new build is unhealthy
+```
 
 ### Where the secrets are
 
-All three live in the project root and are already packed inside the zip — nothing to create by hand:
+Three files. Never committed, never baked into an image, never shipped in an
+archive — supplied to the container as read-only bind mounts.
 
-| File | What it is | Used for |
+| File | What it is | Recoverable if lost? |
 |---|---|---|
-| `.env` | Flask config (`SECRET_KEY`, `DATABASE_URL`, `FIREBASE_PROJECT_ID`, log level, etc.) | App startup config |
-| `service-account-key.json` | Firebase service-account private key | Auth to Firestore (device configs/logs) |
-| `encryption.key` | Fernet symmetric key | Encrypts/decrypts device API keys stored in the DB |
+| `.env` | Flask config (`SECRET_KEY`, `FIREBASE_PROJECT_ID`, log level) | Yes — see `.env.example` |
+| `service-account-key.json` | Firebase service-account private key | Yes — Firebase console |
+| `encryption.key` | Fernet key for stored device credentials | **No** |
 
-If any of these is missing on the server, the app either fails to start (`service-account-key.json`) or — for `encryption.key` — silently **generates a new one** on first boot, which makes any previously-encrypted device credentials unreadable. Always carry the existing files over; don't let the server generate fresh ones.
+> **`encryption.key` cannot be regenerated.** Every device credential in
+> Firestore is encrypted with it, so a replacement key means asking the CTOP
+> team to reissue every node token. `scripts/preflight.sh` refuses to start
+> the stack when it is missing, empty, or has been turned into a *directory*
+> by Docker — which is what Docker silently does when a bind-mounted file
+> does not exist.
 
-### Two commands, on the server
-
-```bash
-# 1. Unpack the zip
-unzip ctop-middleware-deploy.zip -d ctop-middleware && cd ctop-middleware
-
-# 2. Run the one deploy script — handles everything else
-./scripts/quick-deploy.sh
-```
-
-That script installs Docker if it's not already there, locks down the three
-secret files' permissions, builds the image, starts the app (+ bundled nginx
-reverse proxy on port 80), and checks it's actually responding. Nothing else
-to run and nothing to copy separately — the secrets already came in with
-the zip in step 1. The app is reachable at `http://<server-ip>/` once it
-prints "Deploy successful".
-
-**Only go further if you need:**
-- A real domain name + HTTPS → see [Step 11–14 below](#step-11-install-and-configure-nginx-reverse-proxy) (certbot)
-- Auto-start on server reboot → see [systemd service](#method-2-systemd-service-optional-for-boot-auto-start) (Docker's `restart: always` already covers crash recovery)
-- To rebuild the zip after local code changes → see [Preparing a Deployment ZIP](#step-55-prepare-a-deployment-zip-from-your-local-machine)
+The previous zip-based flow (`ctop-middleware-deploy.zip` plus
+`scripts/quick-deploy.sh`) has been retired. It bundled all three secrets
+inside a distributable archive, so production credentials travelled through
+chat, email and laptops with no way to revoke them.
 
 ---
-
 ## Local Development Setup
 
 ### Prerequisites
@@ -798,60 +795,33 @@ cd /opt/ctop-middleware
 
 ---
 
-### Step 5.5: Prepare a Deployment ZIP (From Your Local Machine)
+### Step 5.5: Prepare a Deployment ZIP — RETIRED
 
-Do this on your **local** machine (where the project currently lives) before uploading anything.
+This step used to build `ctop-middleware-deploy.zip` containing the app code
+**and** `.env`, `service-account-key.json` and `encryption.key`, then told you
+to treat the resulting file "like a password".
 
-**1. Stop everything local first**
+It has been removed, because a bundle of live production secrets is a bundle
+of live production secrets no matter how carefully it is handled: it gets
+forwarded, it sits in a Downloads folder, it lands in a chat history, and
+there is no way to revoke it afterwards.
 
-```bash
-# Windows PowerShell — find what's on the dev port
-netstat -ano | findstr :8090
-Stop-Process -Id <pid> -Force
-
-# Docker, if it was running
-docker-compose down
-```
-
-Make sure no leftover `python app.py` / `docker-compose` process is still writing to the project folder — a live SQLite file or log gets corrupted/half-written if you zip it mid-write.
-
-**2. Delete local-only runtime artifacts** — these are regenerated automatically on first run and should never ship:
+**Use instead:** clone the code from git and copy only the three secret files
+separately (Step 6, Option C), or run the bootstrap which does the whole host
+setup in one command:
 
 ```bash
-# From the project root
-rm -rf __pycache__ */__pycache__ .pytest_cache .ruff_cache venv
-rm -f app.pid app_stdout.log app_stderr.log *.log
-rm -f instance/*.db instance/*.lock
+git clone <repo-url> /opt/ctop-middleware
+scp .env encryption.key service-account-key.json <server>:/opt/ctop-middleware/
+cd /opt/ctop-middleware && sudo ./scripts/bootstrap-ubuntu.sh
 ```
 
-| Exclude from zip | Why |
-|---|---|
-| `venv/` | Platform-specific; rebuilt on the server with `pip install -r requirements.txt` |
-| `.git/`, `.github/` | Version control / CI metadata, not needed to run the app |
-| `__pycache__/`, `.pytest_cache/`, `.ruff_cache/` | Regenerated automatically |
-| `*.log`, `app.pid` | Local dev-server runtime output |
-| `instance/*.db`, `instance/*.lock` | Local dev data — the server builds its own (Docker `entrypoint.sh` runs `db.create_all()`; the Firestore mirror resyncs on startup) |
-| `.claude/` | Local assistant tooling, unrelated to the app |
-
-**Keep**: `.env`, `service-account-key.json`, `encryption.key` — this project's current deployment copies these live credentials inside the zip rather than setting them up separately on the server. Since the zip is now a self-contained bundle of production secrets, treat the zip file itself like a password: send it over a secure/private channel only, delete it after the server copy is confirmed, and `chmod 600` the three files once unpacked.
-
-**3. Create the archive**
-
-```powershell
-# Windows PowerShell, from the project root
-Compress-Archive -Path * -DestinationPath ..\ctop-middleware-deploy.zip -Force
-```
-
-```bash
-# Linux/Mac equivalent
-cd ..
-zip -r ctop-middleware-deploy.zip Middleware-Evr-CtoP \
-  -x "*/venv/*" "*/.git/*" "*/.github/*" "*/__pycache__/*" "*.log" "*.pid"
-```
-
-**Result**: One `ctop-middleware-deploy.zip` containing the app code, templates/static assets, `requirements.txt`, `Dockerfile`, `docker-compose.yml`, `nginx/`, and the three credential files — ready to transfer to the server.
+`scripts/preflight.sh` then verifies all three files are present, non-empty,
+and actually files rather than the empty directories Docker creates when a
+bind-mount source is missing. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
+
 
 ### Step 6: Upload Project Files
 
@@ -868,17 +838,19 @@ git clone https://github.com/your-org/ctop-middleware .
 scp -r . user@your-server:/opt/ctop-middleware/
 ```
 
-**Option C: Upload the prepared ZIP (recommended for a one-off manual deploy)**
+**Option C: Copy only the secrets, after cloning the code**
+
+The code comes from git (Option A); only the three secret files are copied by
+hand, and they are never put in an archive with the code.
 
 ```bash
-# From your local machine:
-scp ctop-middleware-deploy.zip user@your-server:/opt/ctop-middleware/
+# From a machine that already has them:
+scp .env encryption.key service-account-key.json     user@your-server:/opt/ctop-middleware/
 
 # Then on the server:
 cd /opt/ctop-middleware
-unzip ctop-middleware-deploy.zip
-rm ctop-middleware-deploy.zip
 chmod 600 .env service-account-key.json encryption.key
+bash scripts/preflight.sh    # verifies all three are present and valid
 ```
 
 **What it does**: Transfers project files to server  
@@ -1269,180 +1241,48 @@ docker cp ctop-middleware:/app/backup-*.tar.gz ~/backups/
 
 ---
 
-## CI/CD Auto-Deploy Setup — GitHub Actions (Not currently active)
+## CI/CD Auto-Deploy Setup — GitHub Actions
 
-**Currently disabled in favor of Jenkins** — see [Jenkins Pipeline
-Setup](#jenkins-pipeline-setup-default) below, which is the active default
-auto-deploy path right now. `.github/workflows/deploy.yml` was removed so
-the two systems can't both try to deploy the same push at once. The setup
-below is kept for reference in case this project ever switches back; it
-still works, it's just not wired up to actually fire on push anymore.
+Pushes to `main` are verified and deployed automatically by
+`.github/workflows/deploy.yml`. Full walkthrough in
+**[DEPLOYMENT.md](DEPLOYMENT.md)**; the essentials:
 
-**Also not what you need for a zip handoff to a team** — if you're giving
-someone a `ctop-middleware-deploy.zip` to extract and run, use [Quick Deploy
-(TL;DR)](#quick-deploy-tldr) at the top instead: the secrets travel inside
-that zip already, so there's no separate key-copy step. This section is a
-*different* setup, for when the server pulls its own updates straight from
-GitHub on every future push, instead of someone re-sending a new zip each
-time.
+1. Clone this repository to the deployment directory and put the three secret
+   files in it (see Quick Deploy above).
 
-If this were active, pushing a passing commit to `main` would automatically redeploy
-the server — no manual SSH, no manual commands. Everything below only needs to
-be done **once per server**; none of it repeats.
+2. Register the runner and configure the host in one step:
 
-### What gets automated vs. what can't be
+   ```bash
+   RUNNER_TOKEN=<token> REPO_URL=<repo-url>      sudo ./scripts/bootstrap-ubuntu.sh --with-runner
+   ```
 
-| Step | Automated by | Repeats? |
-|---|---|---|
-| Docker starts on boot | `scripts/server-setup.sh` | No — one time |
-| GitHub Actions runner install | `scripts/server-setup.sh` | No — one time |
-| Pull + lint + test + rebuild on every push | `deploy.yml` + `deploy.sh` | Yes — this is the ongoing automation |
-| Placing `encryption.key` on the server | Manual (see below) | No — one time, and only because it's a secret, see why below |
+   The token comes from repo *Settings → Actions → Runners → New self-hosted
+   runner*, and expires after about an hour.
 
-### Step 1: Run the server setup script (once)
+3. Set the `DEPLOY_DIR` repository variable (*Settings → Secrets and
+   variables → Actions → Variables*) to the deployment directory. It defaults
+   to `/opt/ctop-middleware`.
 
-On the production server:
+The deploy job calls `scripts/deploy.sh`, so it tags every image with its
+commit, waits for `/health` to actually answer, and restores the previous
+image by itself if the new one never becomes healthy. An operator running
+`make deploy` on the server follows the identical path, which means a failure
+reproduces the same way by hand as it did in CI.
 
-```bash
-# Get RUNNER_TOKEN from: GitHub repo → Settings → Actions → Runners →
-# New self-hosted runner (the token shown there expires in ~1 hour, so
-# generate it right before running this)
-RUNNER_TOKEN=<paste token> \
-REPO_URL=https://github.com/<org>/Middleware-Evr-CtoP \
-./scripts/server-setup.sh
-```
+Why the runner needs a persistent deployment directory rather than its own
+workspace: the runner recreates its workspace on every run, and the secrets
+and the SQLite mirror in `instance/` must not live somewhere CI wipes.
 
-This enables Docker on boot and installs the GitHub Actions runner as a
-system service labeled `evara-middleware` (matching `deploy.yml`). The
-runner now auto-starts on every reboot by itself — you never run this again
-unless the server is rebuilt from scratch.
+### Why not Jenkins
 
-### Step 2: Place `encryption.key` on the server (once)
-
-**Which file, exactly:** the `encryption.key` already sitting in this repo's
-root folder on your local machine (next to `docker-compose.yml`) — this is
-the real, working key; it's what every device's stored credentials were
-actually encrypted with. Do not generate a new one and do not let the server
-generate its own — either of those produces a *different* key that can't
-decrypt anything already saved.
-
-**Where it goes:** the server, in the same folder as `docker-compose.yml`
-(e.g. `/opt/ctop-middleware/encryption.key`) — that exact path is what the
-volume mount below reads from.
-
-**Why this one step can't be scripted**: `encryption.key` is the single key
-that decrypts every device's stored ThingSpeak API key, CTOP auth token, and
-EMQX password. A script running *on* the server has no way to produce or
-fetch a secret it doesn't already have — someone with the real key has to
-hand it over once. Putting the key in the git repo instead would defeat the
-entire reason the credentials are encrypted (anyone who can read the repo
-could then decrypt every device's secrets) — so this one step stays manual
-by design, not because it was too inconvenient to automate.
-
-The good news: **you only do this once, ever.** `docker-compose.yml` already
-mounts it as a persistent volume (`./encryption.key:/app/encryption.key`), so
-every future rebuild/redeploy reuses the same file automatically — it's not
-something `deploy.sh` or any redeploy ever needs to touch again.
-
-From your local machine, copy the key to the server's app directory (same
-folder as `docker-compose.yml`):
-
-```bash
-scp encryption.key user@your-server:/opt/ctop-middleware/encryption.key
-```
-
-(No SSH access? Paste the file's contents directly on the server instead:
-`nano encryption.key`, paste, save — then `chmod 600 encryption.key`.)
-
-### Step 3: Push to `main`
-
-That's it from here on. Every push to `main` that passes CI (`tests/` must
-pass; `deploy.sh` also re-checks lint as a hard gate) triggers
-`.github/workflows/deploy.yml`, which runs `deploy.sh` on the runner you just
-installed: pull latest → install deps → lint → test → rebuild → restart.
-A failing commit never touches the running containers.
+An earlier iteration of this repo made a `Jenkinsfile` the default deploy
+path, with the three secrets held in Jenkins' Credentials store. That has
+been removed so there is exactly one deploy path instead of two competing
+ones. The credential handling it introduced is preserved in spirit: secrets
+live only in the deployment directory on the server at mode 600, are never
+committed, and never enter an image layer.
 
 ---
-
-## Jenkins Pipeline Setup (Default)
-
-**This is the active default auto-deploy path right now.** The `Jenkinsfile`
-at the repo root does the full lint → test → build → deploy → health-check
-cycle automatically on every push to `main`, running on Jenkins instead of
-the GitHub Actions setup above (which is currently disabled specifically so
-it can't double-deploy against the same server).
-
-This `Jenkinsfile` reuses the sibling `Middleware-water-SPCRC` project's
-agent label (`scrc-main-production`) and GitHub credential ID
-(`SmartCityOrganisation-GitHubApp`) on the assumption it runs on that same
-Jenkins server — so neither of those needs re-creating if that assumption
-holds. The 3 secrets, though, are **not** uploaded per build like the
-sibling pipeline does — that would mean a human attaching files to trigger
-every single deploy, which isn't actually automated. Instead they're
-registered once and reused forever (see below).
-
-### One-time Jenkins setup — after this, every push deploys with zero manual steps
-
-**1. Register the 3 secrets as Jenkins credentials (once)**
-
-Run `scripts/jenkins-register-secrets.sh` from the repo root (where `.env`,
-`service-account-key.json`, and `encryption.key` already are) — it registers
-all three in one shot via Jenkins' own API instead of filling out 3 separate
-UI forms:
-
-```bash
-JENKINS_URL=https://your-jenkins-server \
-JENKINS_USER=youruser \
-JENKINS_API_TOKEN=<generate at Jenkins → your user → Configure → API Token> \
-./scripts/jenkins-register-secrets.sh
-```
-
-Needs Overall/Administer permission on that Jenkins instance — same
-permission level manually adding credentials would require anyway. Your
-username/token only ever go from your own shell to your own Jenkins server;
-nothing else sees them.
-
-**Prefer the UI instead?** Jenkins → Manage Jenkins → Credentials → add
-three entries, each of kind **"Secret file"**:
-
-| Credential ID | Upload this file |
-|---|---|
-| `evara-env-file` | `.env` |
-| `evara-service-account-key` | `service-account-key.json` |
-| `evara-encryption-key` | `encryption.key` — **the existing, working one**, never a freshly generated one |
-
-Either way, this is the step that makes it genuinely automated: once these
-three exist, **no one ever uploads a file to trigger a deploy again** — the
-pipeline pulls them automatically, every run, forever.
-
-**`encryption.key` warning**: whichever file you upload here is the one
-that decrypts every device's stored credentials from that point on.
-Uploading the wrong one (or a freshly generated one) reproduces the exact
-outage this project's git history already fixed once.
-
-**2. If the agent label or GitHub credential ID *don't* already exist**
-on your Jenkins server (i.e. this is a separate Jenkins instance from the
-sibling project's), either create them to match, or edit
-`agent { label '...' }` and `credentialsId: '...'` in `Jenkinsfile` to
-point at whatever does exist there.
-
-**3. Create the Jenkins job**
-
-New Item → Pipeline → "Pipeline script from SCM" → point it at
-`https://github.com/aditya08deole/Middleware-Evr-Ctop.git`, branch `main`,
-`Jenkinsfile`. Enable the GitHub push trigger so it fires automatically.
-
-### What the pipeline does on every push — no human involved after setup
-
-Checkout → pull the 3 secrets from Jenkins credentials → lint
-(`ruff`/`black`) + run the test suite inside a throwaway container → build →
-stop the old containers → start the new ones → poll `/health` for up to 90
-seconds, failing the build if the app never comes up healthy. A failing
-lint/test stage stops everything before the running production containers
-are ever touched.
-
----
-
 ## Mirror File Feature
 
 ### What is Mirror File?
