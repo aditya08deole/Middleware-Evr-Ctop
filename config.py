@@ -65,6 +65,21 @@ class Config:
         os.environ.get("EMQX_MESSAGE_BUFFER_SIZE", "100")
     )  # max messages per device
 
+    # Namespace for MQTT client IDs (see emqx_service.subscribe_device).
+    # MQTT requires a client_id to be unique across the whole broker: if two
+    # live connections share one, the broker closes the older session every
+    # time the other reconnects, and the two instances kick each other off in
+    # a loop (observed as "Unexpected disconnect (rc=128)" every few seconds
+    # on every device, with telemetry gaps in between). Because client IDs
+    # here are derived from the device ID, they are identical across
+    # deployments — so a second instance (e.g. a developer running app.py
+    # locally while the deployed one is up) collides with production on every
+    # device at once. Override this to anything else (EMQX_CLIENT_ID_PREFIX=
+    # local-dev) to run alongside the deployed instance without disturbing
+    # it. The default is unchanged, so the deployed instance keeps the stable
+    # client_id its clean_session=False session persistence depends on.
+    EMQX_CLIENT_ID_PREFIX = os.environ.get("EMQX_CLIENT_ID_PREFIX", "ctop")
+
     # CTOP configuration
     CTOP_TIMEOUT = 30
     CTOP_MAX_RETRIES = 3

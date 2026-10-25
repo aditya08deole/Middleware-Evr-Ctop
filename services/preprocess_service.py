@@ -32,7 +32,16 @@ _EMQX_FEED_METADATA_KEYS = {"created_at", "entry_id"} | {
 # refreshes it immediately whenever the mapping is saved.
 DEFAULT_CTOP_FIELD_MAP = {
     "EvaraTank": {"Level": "water_level", "Temperature": "temperature"},
-    "EvaraFlow": {"FlowRate": "flow_rate", "MeterReading": "waterconsumption"},
+    # "water_consumption" with the underscore is what CTOP actually
+    # requires — confirmed live against dev-ctop.iiit.ac.in, whose own
+    # sample request for a flow node posts {"flow_rate": ..,
+    # "water_consumption": ..}. This default previously read
+    # "waterconsumption" and was masked in production only by a saved
+    # Settings → CTOP Parameter Mapping override correcting it; resetting
+    # or losing that settings document silently reverted every EvaraFlow
+    # device to the unusable key and produced "Missing parameter
+    # water_consumption" 400s, with the code's own default being the cause.
+    "EvaraFlow": {"FlowRate": "flow_rate", "MeterReading": "water_consumption"},
     "EvaraValve": {"FlowRate": "flow_rate", "Liters": "liters"},
     "EvaraDeep": {"Distance": "distance"},
     "EvaraTDS": {"Temperature": "temperature", "TDS": "tds"},

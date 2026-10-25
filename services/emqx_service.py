@@ -135,7 +135,13 @@ class EMQXService:
         self.unsubscribe_device(device_id)
 
         device_name = device_data.get("name", device_id)
-        client_id = f"ctop-{device_id}"  # Persistent client_id (no timestamp suffix)
+        # Persistent client_id (no timestamp suffix) so clean_session=False
+        # can resume the same session across reconnects and keep QoS 1
+        # messages durable. The prefix is configurable because this ID is
+        # otherwise identical in every deployment, and two live connections
+        # sharing one client_id disconnect each other in a loop — see
+        # Config.EMQX_CLIENT_ID_PREFIX.
+        client_id = f"{Config.EMQX_CLIENT_ID_PREFIX}-{device_id}"
 
         try:
             # Create MQTT client (paho-mqtt v2.0+ API)

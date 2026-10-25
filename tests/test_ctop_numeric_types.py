@@ -78,7 +78,7 @@ class TestCTOPNumericTypes(unittest.TestCase):
 
         transformed = self._transform(device_data, processed_entry)
 
-        self.assertEqual(transformed, {"flow_rate": 5.0, "waterconsumption": 100.0})
+        self.assertEqual(transformed, {"flow_rate": 5.0, "water_consumption": 100.0})
         for value in transformed.values():
             self.assertIsInstance(value, float)
 

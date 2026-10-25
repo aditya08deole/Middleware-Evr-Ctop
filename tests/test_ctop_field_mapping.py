@@ -35,7 +35,14 @@ class TestCTOPFieldMapping(unittest.TestCase):
         set_ctop_field_map_overrides({})
         merged = get_ctop_field_map()
         self.assertEqual(merged["EvaraTank"]["Level"], "water_level")
-        self.assertEqual(merged["EvaraFlow"]["MeterReading"], "waterconsumption")
+        # "water_consumption" with the underscore — this is the key CTOP's
+        # API actually requires, confirmed against dev-ctop.iiit.ac.in
+        # (its own sample request for a flow node posts "water_consumption",
+        # and live payloads using it are accepted). The default here used to
+        # read "waterconsumption", which only ever worked in production
+        # because a saved Settings override corrected it at runtime; this
+        # assertion exists to stop the unusable spelling coming back.
+        self.assertEqual(merged["EvaraFlow"]["MeterReading"], "water_consumption")
 
     def test_partial_override_only_replaces_the_overridden_key(self):
         """Overriding one field for one device type must not drop the
@@ -83,7 +90,7 @@ class TestCTOPFieldMapping(unittest.TestCase):
             "dev1", processed, device_data=device_data
         )
 
-        self.assertEqual(transformed, [{"flow_rate": 1.2, "waterconsumption": 99.0}])
+        self.assertEqual(transformed, [{"flow_rate": 1.2, "water_consumption": 99.0}])
 
     def test_default_map_covers_every_known_device_type(self):
         self.assertEqual(
