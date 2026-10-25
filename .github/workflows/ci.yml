@@ -5,6 +5,18 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Must match the Dockerfile's PYTHON_VERSION. Running the suite on a
+  # different interpreter than production is how "passes in CI, breaks on
+  # the server" happens.
+  PYTHON_VERSION: '3.11'
 
 jobs:
   test:
@@ -16,7 +28,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install dependencies
@@ -32,24 +44,36 @@ jobs:
         # working directory (the repo root) to sys.path[0] the same way
         # local development runs (`./venv/Scripts/python.exe -m pytest`)
         # always have — this makes CI match that exactly.
+        #
+        # Verified the hard way: bare `pytest` on this repo fails at
+        # collection with ModuleNotFoundError, while `python -m pytest`
+        # passes all 153 tests. Keep it this way.
         run: python -m pytest tests/ -v
 
   lint:
-    name: Lint (informational)
+    name: Lint and format
     runs-on: ubuntu-latest
-    # Advisory only for now — the existing codebase predates this workflow
-    # and hasn't been formatted/linted to any single standard yet. Blocking
-    # merges on style before a baseline cleanup pass would fail on line one
-    # for reasons unrelated to correctness. Flip continue-on-error to false
-    # once the codebase has been brought up to a clean baseline.
-    continue-on-error: true
+    # Now BLOCKING. The original note here said it was advisory because
+    # "the existing codebase predates this workflow and hasn't been
+    # formatted/linted to any single standard yet", to be flipped "once the
+    # codebase has been brought up to a clean baseline". That baseline now
+    # exists: ruff and black both pass clean on the whole tree, and
+    # pyproject.toml pins the configuration so a developer's local run and
+    # this job cannot disagree. Keeping it advisory from here would only
+    # let the baseline rot again.
+    #
+    # The rule set is deliberately ruff's E,F defaults. Enabling the wider
+    # catalogue (W, B, UP) reports 134 findings in working code —
+    # modernisations like `datetime.UTC` over `timezone.utc` — which is a
+    # worthwhile change but its own reviewed one, not a wall of red that
+    # teaches everyone to ignore this job.
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install lint tools
@@ -64,10 +88,10 @@ jobs:
   security:
     name: Dependency vulnerability scan (informational)
     runs-on: ubuntu-latest
-    # Advisory only for now — surfaces known CVEs in pinned dependencies
-    # without blocking merges while a remediation/upgrade plan is worked
-    # out. Tighten to blocking once the team has a process for triaging
-    # findings quickly.
+    # Advisory only, deliberately. A newly published CVE in a transitive
+    # dependency is important to see, but it is not a reason to block a
+    # deploy that fixes an unrelated production incident. Review the output
+    # and bump deliberately.
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -75,7 +99,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
       - name: Install pip-audit
@@ -83,3 +107,90 @@ jobs:
 
       - name: pip-audit
         run: pip-audit -r requirements.txt
+
+  docker:
+    name: Image builds and is safe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Catches Dockerfile breakage before a deploy hits it on the server.
+      # Builds the real image but never pushes it; the Actions cache keeps
+      # this to seconds once warm.
+      #
+      # No secrets are needed or available here: encryption.key and
+      # service-account-key.json are excluded by .dockerignore and mounted
+      # at runtime, so the image must build without them.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ctop-middleware:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Regression guard. Before this change .dockerignore did not exclude
+      # encryption.key or service-account-key.json, so `COPY . .` baked the
+      # live Firebase credentials and the key that decrypts every device
+      # credential into image layers — readable by anyone who can pull the
+      # image or run `docker history`. This fails the build if that returns.
+      - name: Assert no secrets are baked into the image
+        run: |
+          set -euo pipefail
+          for secret in encryption.key service-account-key.json .env; do
+            if docker run --rm --entrypoint sh ctop-middleware:ci \
+                 -c "test -e /app/$secret" 2>/dev/null; then
+              echo "::error::$secret is present inside the image — check .dockerignore"
+              exit 1
+            fi
+          done
+          echo "No secret files found inside the image."
+
+      - name: Assert the image does not run as root
+        run: |
+          set -euo pipefail
+          uid=$(docker run --rm --entrypoint id ctop-middleware:ci -u)
+          if [ "$uid" = "0" ]; then
+            echo "::error::image runs as root (uid 0)"
+            exit 1
+          fi
+          echo "Image runs as uid $uid."
+
+  shellcheck:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The deploy path is shell now, so it gets the same scrutiny as the
+      # Python. Two real bugs in these scripts were found only by running
+      # them: a `command -v python3` check that passed against a
+      # non-functional shim, and a watchdog threshold that silently ignored
+      # partial outages.
+      - name: Syntax check every script
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in entrypoint.sh scripts/*.sh; do
+            [ -e "$f" ] || continue
+            if bash -n "$f"; then
+              echo "ok   $f"
+            else
+              echo "::error file=$f::bash syntax error"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: shellcheck
+        # Advisory: shellcheck's style suggestions are plentiful and this
+        # job's value is catching genuine syntax and quoting errors, which
+        # the step above already blocks on.
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -S warning entrypoint.sh scripts/*.sh || true

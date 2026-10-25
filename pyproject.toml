@@ -1,0 +1,71 @@
+# Tooling configuration for lint, format and tests.
+#
+# This file exists so that `ruff check .`, `black --check .` and `pytest`
+# behave identically on a developer laptop and in CI — before it, each tool
+# ran on bare defaults, so "it passes locally" depended on which tool
+# version happened to be installed.
+
+[tool.ruff]
+target-version = "py311"  # matches the Dockerfile's runtime
+line-length = 88          # black's default, so the two never disagree
+exclude = [
+    ".git",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "migration",  # one-shot SQLite->Firestore scripts, not maintained code
+]
+
+[tool.ruff.lint]
+# Deliberately the default rule set (E, F) and nothing more. The point of
+# gating deploys on lint is to catch real defects — unused names, undefined
+# references, broken excepts. Enabling the wider catalogue (W, B, UP) was
+# tried and reports 134 findings in working, shipped code: modernisation
+# suggestions like `datetime.UTC` over `timezone.utc` and `zip(strict=)`.
+# Those may well be worth doing, but as their own reviewed change, not as a
+# wall of red that makes the first CI run fail and teaches everyone to skip
+# the check. Tighten this list in a follow-up, one rule family at a time,
+# fixing as you go.
+select = ["E", "F"]
+ignore = [
+    "E501",  # line length is black's job, and black is authoritative here
+]
+
+[tool.ruff.lint.per-file-ignores]
+# These two are standalone operational scripts, not part of the package.
+# They must call load_dotenv() BEFORE importing any project module, because
+# utils/* and services/* read configuration at import time — moving those
+# imports to the top of the file (what E402 asks for) would make them read
+# an unpopulated environment and break the scripts. The import order is the
+# correct design here, so E402 is suppressed for these files specifically
+# rather than disabled globally.
+"fetch_exact_node_data.py" = ["E402"]
+"get_device_report.py" = ["E402"]
+"scripts/apply_new_ctop_nodes.py" = ["E402"]
+# Tests legitimately redefine fixtures and import inside functions to keep
+# module import side effects out of collection.
+"tests/*" = ["F811", "E402"]
+
+[tool.black]
+line-length = 88
+extend-exclude = "/(migration)/"
+# Deliberately NO target-version. Pinning it to py311 enables black's newer
+# formatting and reformats 8 already-committed files — a repo-wide formatting
+# sweep has no business riding along inside a deployment change. The codebase
+# is already consistent under black's own inference (see "Format all Python
+# files with Black to clear CI lint failures"), so leaving this unset keeps
+# `black --check` green with zero churn. Add it in its own commit if wanted.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# stress_test_scaling.py drives thousands of simulated devices and takes
+# minutes — valuable, but not something every push should wait for. Run it
+# deliberately with: python -m pytest tests/stress_test_scaling.py
+addopts = "-q --ignore=tests/stress_test_scaling.py"
+filterwarnings = [
+    "default",
+    # APScheduler and the SQLAlchemy models still call datetime.utcnow();
+    # surfaced as warnings, not failures, so CI isn't blocked by a
+    # deprecation that needs its own separate change.
+    "ignore::DeprecationWarning",
+]

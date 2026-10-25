@@ -1,0 +1,52 @@
+# Line-ending policy. This repository is authored on Windows and deployed to
+# Ubuntu, which is exactly the situation where CRLF silently breaks things:
+#
+#   * A shell script saved with CRLF has "#!/usr/bin/env bash\r" as its
+#     shebang. Linux tries to execute an interpreter literally named
+#     "bash\r" and fails with "bad interpreter: No such file or directory" —
+#     a confusing error that looks like the file is missing.
+#   * A Makefile with CRLF breaks tab-indented recipe lines.
+#   * CRLF inside a Dockerfile RUN heredoc is passed through to the shell
+#     inside the container.
+#
+# Normalise text in the repository and force LF on checkout for everything
+# Linux has to execute or parse, regardless of each developer's
+# core.autocrlf setting.
+
+# Sensible default: normalise to LF in the repo, convert per-platform in the
+# working copy.
+* text=auto
+
+# --- Must be LF everywhere, including on Windows checkouts ---
+*.sh            text eol=lf
+entrypoint.sh   text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+Makefile        text eol=lf
+*.mk            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.toml          text eol=lf
+*.conf          text eol=lf
+*.service       text eol=lf
+.env.example    text eol=lf
+.dockerignore   text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Python is tolerant of either, but keeping it LF matches the container and
+# keeps diffs clean between host and server.
+*.py            text eol=lf
+*.rules         text eol=lf
+
+# --- Binary: never touch ---
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.pdf           binary
+*.db            binary
+*.sqlite3       binary
+*.woff          binary
+*.woff2         binary
