@@ -1,0 +1,56 @@
+# Local development overlay. NOT loaded automatically — that is the point.
+#
+# Compose auto-loads a file named docker-compose.override.yml with no flag
+# and no output, so naming this file that would mean a developer overlay
+# left on a server silently reconfigures production. Requesting it
+# explicitly keeps production deploys predictable:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# or simply: make dev
+
+services:
+  middleware:
+    build:
+      args:
+        # Match whoever is running docker locally so the bind-mounted
+        # instance/ directory stays writable:
+        #   APP_UID=$(id -u) APP_GID=$(id -g) make dev
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    # A crash should stay crashed locally so the traceback is visible,
+    # rather than being restarted out from under you.
+    restart: "no"
+    environment:
+      # Overrides the image's FLASK_ENV=production. Note this also relaxes
+      # config.py's and utils/encryption.py's production guards, which is
+      # fine locally and exactly why this file must never load in production.
+      FLASK_ENV: development
+      DEBUG: "True"
+      LOG_LEVEL: DEBUG
+      # Keep a local instance from colliding with the deployed one over MQTT
+      # client IDs. Both instances subscribing as ctop-<device_id> makes the
+      # broker evict each one in turn, every few seconds, breaking telemetry
+      # on BOTH sides. See Config.EMQX_CLIENT_ID_PREFIX.
+      EMQX_CLIENT_ID_PREFIX: local-dev
+    volumes:
+      # Live code mount: edit on the host, restart the container, no rebuild.
+      # Listed after the base file's volumes so it layers on top of the image
+      # content rather than replacing the instance/ and secret mounts.
+      - .:/app
+    # Faster feedback locally; the 60s production start_period is there for a
+    # cold Firebase sync that a dev box usually does not wait on.
+    healthcheck:
+      start_period: 20s
+      interval: 10s
+    # No resource ceiling locally — leave scheduling to the host.
+    deploy:
+      resources:
+        limits: {}
+
+  # nginx adds nothing locally: the app is already on :8090 and there is no
+  # TLS to terminate. Scaled to zero rather than deleted, because Compose
+  # cannot remove a service defined in the base file.
+  nginx:
+    deploy:
+      replicas: 0

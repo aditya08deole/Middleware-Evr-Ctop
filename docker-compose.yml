@@ -1,43 +1,114 @@
-version: '3.8'
+# Production stack. This file alone describes production — there is
+# deliberately NO docker-compose.override.yml, because Compose loads an
+# override file automatically and silently, which means a developer
+# convenience left on disk would quietly apply itself to a production
+# deploy. Development settings live in docker-compose.dev.yml and must be
+# requested explicitly:
+#
+#   production:  docker compose up -d                (or: make up)
+#   development: docker compose -f docker-compose.yml \
+#                               -f docker-compose.dev.yml up    (or: make dev)
+#
+# The obsolete top-level `version:` key is gone — Compose v2 ignores it and
+# warns about it on every single command.
+
+name: ctop-middleware
+
+# Shared log configuration. Without this, container logs grow without any
+# bound; this app logs a scheduler cycle every 15 seconds and runs for
+# months, so unbounded logs are a question of when, not if, the disk fills.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
   middleware:
-    build: .
+    build:
+      context: .
+      args:
+        # Must match the numeric owner of ./instance on the host, because
+        # that directory is bind-mounted below. Override in .env if your
+        # server's user is not 1000.
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    image: ctop-middleware:${IMAGE_TAG:-local}
     container_name: evara-middleware
-    restart: always
+    # unless-stopped, not always: `always` restarts the container even after
+    # a deliberate `docker compose stop`, which fights you during
+    # maintenance. unless-stopped still survives reboots and daemon restarts.
+    restart: unless-stopped
     ports:
       - "8090:8090"
     env_file:
       - .env
     volumes:
-      # Persistent storage for the SQLite mirror database
+      # SQLite mirror + scheduler lock. Must persist across rebuilds.
       - ./instance:/app/instance
-      # Credential encryption key MUST survive container rebuilds — without
-      # this mount, a rebuild gets a fresh container filesystem and
-      # utils/encryption.py silently generates a brand-new key, which can
-      # never decrypt any device credential encrypted under the old one.
-      - ./encryption.key:/app/encryption.key
-      # Optional: mount service account key if not in the code folder
-      # - ./service-account-key.json:/app/service-account-key.json
+      # Credential encryption key. Read-only: the app only ever reads this
+      # in production (utils/encryption.py raises rather than generating a
+      # key when FLASK_ENV=production), so mounting :ro removes any chance
+      # of the file being rewritten in place.
+      #
+      # If this path does not exist on the host, Docker CREATES AN EMPTY
+      # DIRECTORY here instead of failing, which orphans every encrypted
+      # credential. scripts/preflight.sh exists to catch exactly that, and
+      # `make up` runs it first.
+      - ./encryption.key:/app/encryption.key:ro
+      # Firebase service account. Previously baked into the image by
+      # `COPY . .`; now excluded in .dockerignore and supplied here.
+      - ./service-account-key.json:/app/service-account-key.json:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8090/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      # Startup does a full Firebase device sync and opens an MQTT
+      # subscription per EMQX device — tens of seconds on a cold start.
+      # Without start_period the container reported "unhealthy" during
+      # normal boot, which misleads both operators and any orchestrator
+      # watching health.
+      start_period: 60s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 1g
+        reservations:
+          memory: 256m
+    # Give gunicorn time to finish in-flight CTOP posts and release the
+    # scheduler lock cleanly instead of being killed after the 10s default.
+    stop_grace_period: 30s
 
-  # Optional reverse proxy — additive, doesn't change how `middleware` is
-  # reached on :8090 above. Gives you gzip + a single place to terminate
-  # TLS once you have real certificates (see nginx/nginx.conf). Not
-  # required to run the app; omit this service entirely if you don't want it.
+  # Reverse proxy. Additive — the app is still directly reachable on :8090.
+  # Gives gzip and one place to terminate TLS (see nginx/nginx.conf).
   nginx:
     image: nginx:1.27-alpine
     container_name: evara-nginx
-    restart: always
+    restart: unless-stopped
     depends_on:
-      - middleware
+      middleware:
+        # Wait for the app to be genuinely healthy, not merely started, so
+        # nginx never serves 502s to whatever is probing it during boot.
+        condition: service_healthy
     ports:
       - "80:80"
       # - "443:443"  # uncomment once TLS certs are mounted below
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       # - ./nginx/certs:/etc/nginx/certs:ro
+    healthcheck:
+      # The alpine image has busybox wget, not curl.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          cpus: "0.50"
+          memory: 128m

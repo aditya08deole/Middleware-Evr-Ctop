@@ -1,23 +1,64 @@
+# Keep the build context small and — more importantly — keep secrets OUT of
+# the image. Anything not excluded here is baked into an image layer by
+# `COPY . .`, and image layers are readable by anyone who can pull the image
+# or run `docker history`. Deleting a secret in a later layer does not remove
+# it from the earlier one.
+#
+# encryption.key and service-account-key.json were previously NOT excluded,
+# so every build embedded the live Firebase service-account credentials and
+# the key that decrypts every stored device credential. They are now
+# excluded here and supplied at RUNTIME as read-only bind mounts instead —
+# see docker-compose.yml.
+
+# --- Secrets: never in an image layer ---
+.env
+.env.*
+!.env.example
+encryption.key
+service-account-key.json
+static/js/firebase-config.js
+
+# --- Local state that must come from the host volume, not the image ---
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Python build artefacts ---
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
 .Python
+*.egg-info/
+build/
+dist/
+
+# --- Virtualenvs ---
 env/
 venv/
 .venv/
+venv-ci/
 include/
 lib/
+lib64/
 bin/
-*.db
-*.log
-.env
+share/
+pyvenv.cfg
+
+# --- Tooling / CI / docs: not needed at runtime ---
 .git
 .gitignore
-instance/device_mirror.db
-instance/ctop_iot.db
+.gitattributes
+.github/
+.vscode/
+.idea/
 .gemini/
 tests/
-README.md
-FIXES_SUMMARY.md
-DEPLOYMENT_READINESS.md
+migration/
+*.md
+*.log
+*.pid
+
+# --- Compose files are read by the daemon, not needed inside the image ---
+docker-compose*.yml
